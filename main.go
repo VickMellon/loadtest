@@ -33,6 +33,7 @@ func main() {
 	s.requestWorkset(int(c))
 	s.updateWorkset()
 	s.equalizeBalances()
+	s.updateWorkset()
 
 	wg := &sync.WaitGroup{}
 	pr := &process{

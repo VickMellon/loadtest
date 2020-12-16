@@ -63,11 +63,11 @@ func spender(wg *sync.WaitGroup, from *wallet, workset []*wallet, amount uint64,
 		}
 		p.s.Unlock()
 
-		_, err = broadcastTx(tx, nodeUrl, "sync")
+		_, err = broadcastTx(tx, nodeUrl, "async")
 		for err == ErrMempoolIsFull || err == ErrTooManyOpenFiles {
 			// wait & retry
 			time.Sleep(20 * time.Millisecond)
-			_, err = broadcastTx(tx, nodeUrl, "sync")
+			_, err = broadcastTx(tx, nodeUrl, "async")
 		}
 		if err != nil {
 			log.Println("broadcast FAIL, tx:", tx)
