@@ -22,7 +22,7 @@ type state struct {
 	chainId string
 	nodes   []string
 	wallets []*wallet
-	workset []*wallet
+	workset []*wallet // specified part of all wallets for current run
 }
 
 type wallet struct {
@@ -181,6 +181,7 @@ func (s *state) requestWorkset(n int) {
 
 func (s *state) equalizeBalances() {
 	n := len(s.workset)
+	m := len(s.wallets)
 	if n == 0 {
 		log.Fatalln("empty workset, requestWorkset first")
 	} else if n == 1 {
@@ -189,25 +190,31 @@ func (s *state) equalizeBalances() {
 	}
 	bank := s.workset[0]
 	var total uint64
-	for _, w := range s.workset {
+	for _, w := range s.wallets {
 		total += w.balance
 	}
-	if total <= feesAmount*uint64(n-1)*2 {
+	if total <= feesAmount*uint64(m+n-2) {
 		log.Fatalln("total balance is too low, charge more tokens to", bank.address)
 	}
-	total = total - feesAmount*uint64(n-1)*2 // exclude balancing fees
+	total = total - feesAmount*uint64(m+n-2) // exclude balancing fees
 	each := total / uint64(n)                // target balance of each wallet in workset
 	if each <= 2*feesAmount {
 		log.Fatalln("total balance too low, charge more tokens to", bank.address)
 	}
 	var txs uint64
-	// stage 1 - cut excess balances to bank
-	for i := 1; i < n; i++ {
-		if s.workset[i].balance > each+feesAmount {
+	// stage 1 - cut excess balances to bank from all wallets
+	for i := 1; i < m; i++ {
+		var amount uint64
+		if i < n && s.wallets[i].balance > each+feesAmount {
 			// this balance too high - transfer difference to bank
-			dif := s.workset[i].balance - (each + feesAmount)
-			tx := getSignedSendTx(s.workset[i].address, bank.address, dif,
-				"equalizeBalances", s.workset[i].privKey, s.chainId, s.workset[i].accountNumber, s.workset[i].sequence)
+			amount = s.wallets[i].balance - (each + feesAmount)
+		} else if i >= n && s.wallets[i].balance > feesAmount {
+			// some balance on wallet out of workset - move entire sum to bank
+			amount = s.wallets[i].balance - feesAmount
+		}
+		if amount > 0 {
+			tx := getSignedSendTx(s.wallets[i].address, bank.address, amount,
+				"equalizeBalances", s.wallets[i].privKey, s.chainId, s.wallets[i].accountNumber, s.wallets[i].sequence)
 			_, err := broadcastTx(tx, s.nodes[0], "sync")
 			for err == ErrMempoolIsFull {
 				// wait & retry
@@ -217,13 +224,14 @@ func (s *state) equalizeBalances() {
 			if err != nil {
 				log.Fatalln("equalizeBalances failed,", err)
 			}
-			s.workset[i].balance -= dif + feesAmount
-			s.workset[i].sequence++
-			bank.balance += dif
+			s.wallets[i].balance -= amount + feesAmount
+			s.wallets[i].sequence++
+			bank.balance += amount
 			txs++
 		}
+		time.Sleep(2 * time.Millisecond)
 	}
-	// stage 2 - deposit low balances from bank
+	// stage 2 - deposit low balances from bank for workset wallets only
 	for i := 1; i < n; i++ {
 		if s.workset[i].balance < each-feesAmount {
 			// this balance too low - get deposit from bank
@@ -244,6 +252,7 @@ func (s *state) equalizeBalances() {
 			s.workset[i].balance += dif
 			txs++
 		}
+		time.Sleep(2 * time.Millisecond)
 	}
 	if txs > 0 {
 		log.Println("waiting 10s for sure commits after equalize balances")

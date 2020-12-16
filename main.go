@@ -31,7 +31,7 @@ func main() {
 	s := loadState()
 	s.checkConfig(chainId, nodes)
 	s.requestWorkset(int(c))
-	s.updateWorkset()
+	s.updateWallets()
 	s.equalizeBalances()
 	s.updateWorkset()
 
