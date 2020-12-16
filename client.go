@@ -70,7 +70,7 @@ func queryAccount(address, nodeUrl string) *account {
 	if err = json.Unmarshal(respBody, &res); err != nil {
 		log.Fatal(err)
 	}
-	if res.Result.Value.Address != address {
+	if res.Result.Value.Address != address || len(res.Result.Value.Coins) == 0 {
 		return nil
 	}
 	bal, err := strconv.ParseInt(res.Result.Value.Coins[0].Amount, 10, 64)

@@ -196,15 +196,15 @@ func (s *state) equalizeBalances() {
 	if total <= feesAmount*uint64(m+n-2) {
 		log.Fatalln("total balance is too low, charge more tokens to", bank.address)
 	}
-	total = total - feesAmount*uint64(m+n-2) // exclude balancing fees
-	each := total / uint64(n)                // target balance of each wallet in workset
+	total -= feesAmount * uint64(m+n-2) // exclude balancing fees
+	each := total / uint64(n)           // target balance of each wallet in workset
 	if each <= 2*feesAmount {
 		log.Fatalln("total balance too low, charge more tokens to", bank.address)
 	}
 	var txs uint64
 	// stage 1 - cut excess balances to bank from all wallets
 	for i := 1; i < m; i++ {
-		var amount uint64
+		amount := uint64(0)
 		if i < n && s.wallets[i].balance > each+feesAmount {
 			// this balance too high - transfer difference to bank
 			amount = s.wallets[i].balance - (each + feesAmount)
@@ -228,8 +228,8 @@ func (s *state) equalizeBalances() {
 			s.wallets[i].sequence++
 			bank.balance += amount
 			txs++
+			time.Sleep(2 * time.Millisecond)
 		}
-		time.Sleep(2 * time.Millisecond)
 	}
 	// stage 2 - deposit low balances from bank for workset wallets only
 	for i := 1; i < n; i++ {
@@ -251,8 +251,8 @@ func (s *state) equalizeBalances() {
 			bank.sequence++
 			s.workset[i].balance += dif
 			txs++
+			time.Sleep(2 * time.Millisecond)
 		}
-		time.Sleep(2 * time.Millisecond)
 	}
 	if txs > 0 {
 		log.Println("waiting 10s for sure commits after equalize balances")
