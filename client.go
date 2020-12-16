@@ -1,22 +1,24 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"github.com/valyala/fasthttp"
+	"io/ioutil"
 	"log"
-	"os/exec"
+	"net/http"
 	"strconv"
-	"time"
+	"strings"
 )
 
 const (
-	nodeFile = `nodef`
-	cliFile  = `clif`
+	restDefaultBaseUrl = `http://localhost:1317`
+	restGetAccount     = `/auth/accounts/`
+	restBroadcastTx    = `/txs`
+)
 
-	restBaseUrl    = `http://localhost:1317`
-	restGetAccount = restBaseUrl + `/auth/accounts/`
+const (
+	broadcastTxTpl = `{"mode":"%s","tx":%s}`
 )
 
 type accountResponse struct {
@@ -34,21 +36,34 @@ type accountResponse struct {
 	} `json:"result"`
 }
 
-type account struct {
-	Address       string
-	Balance       uint64
-	AccountNumber uint64
-	Sequence      uint64
+type broadcastResponse struct {
+	Txhash string `json:"txhash"`
+	Logs   []struct {
+		Success bool `json:"success"`
+	} `json:"logs"`
 }
 
-func queryAccount(address string) *account {
-	t1 := time.Now()
-	code, respBody, err := fasthttp.Get(nil, restGetAccount+address)
+type account struct {
+	address       string
+	balance       uint64
+	accountNumber uint64
+	sequence      uint64
+}
+
+var (
+	ErrMempoolIsFull    = errors.New("mempool is full")
+	ErrTooManyOpenFiles = errors.New("too many open files")
+)
+
+func queryAccount(address, nodeUrl string) *account {
+	resp, err := http.Get(nodeUrl + restGetAccount + address)
 	if err != nil {
 		log.Fatal(err)
 	}
-	if code != fasthttp.StatusOK {
-		log.Fatal("Response code not OK", code)
+	defer resp.Body.Close()
+	respBody, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Fatal(err)
 	}
 	// parse response
 	var res accountResponse
@@ -61,51 +76,44 @@ func queryAccount(address string) *account {
 	bal, err := strconv.ParseInt(res.Result.Value.Coins[0].Amount, 10, 64)
 	anum, err := strconv.ParseInt(res.Result.Value.AccountNumber, 10, 64)
 	seq, err := strconv.ParseInt(res.Result.Value.Sequence, 10, 64)
-	fmt.Println(time.Now().Sub(t1))
 	return &account{
-		Address:       address,
-		Balance:       uint64(bal),
-		AccountNumber: uint64(anum),
-		Sequence:      uint64(seq),
+		address:       address,
+		balance:       uint64(bal),
+		accountNumber: uint64(anum),
+		sequence:      uint64(seq),
 	}
 }
 
-func getKeysList() map[string]localKey {
-	c := exec.Command(cliFile, `keys`, `list`)
-	out, err := c.Output()
+func broadcastTx(tx string, nodeUrl, mode string) (string, error) {
+	btx := fmt.Sprintf(broadcastTxTpl, mode, tx)
+	rb := strings.NewReader(btx)
+	resp, err := http.Post(nodeUrl+restBroadcastTx, `application/json`, rb)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalln(err)
 	}
-	var keys []localKey
-	if err = json.Unmarshal(out, &keys); err != nil {
-		log.Fatal(err)
-	}
-	res := make(map[string]localKey, len(keys))
-	for _, k := range keys {
-		res[k.Name] = k
-	}
-	return res
-}
-
-func addNewKey(name string) localKey {
-	// check for existed
-	if k, ok := keys[name]; ok {
-		return k
-	}
-	c := exec.Command(cliFile, `keys`, `add`, name)
-	// prepare input
-	var inb bytes.Buffer
-	inb.WriteString(name + "\n") // input password (let it be the same as name)
-	inb.WriteString(name + "\n") // repeat password
-	c.Stdin = &inb
-	// there is bug - clif output key data to StdErr instead of StdOut (already fixed in latest CosmosSDK)
-	out, err := c.CombinedOutput()
+	defer resp.Body.Close()
+	respBody, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalln(err)
 	}
-	var key localKey
-	if err = json.Unmarshal(out, &key); err != nil {
-		log.Fatal(err)
+	if resp.StatusCode == http.StatusInternalServerError &&
+		strings.Contains(string(respBody), `mempool is full`) {
+		return "", ErrMempoolIsFull
 	}
-	return key
+	if resp.StatusCode == http.StatusInternalServerError &&
+		strings.Contains(string(respBody), `too many open files`) {
+		return "", ErrTooManyOpenFiles
+	}
+	if resp.StatusCode != http.StatusOK ||
+		(mode == "sync" && !strings.Contains(string(respBody), `success`)) {
+		log.Println("broadcastTx response - ", resp.Status)
+		log.Println("broadcastTx response body: ", string(respBody))
+		return "", errors.New("broadcastTx error")
+	}
+	// parse response
+	var res broadcastResponse
+	if err = json.Unmarshal(respBody, &res); err != nil {
+		log.Fatalln(err)
+	}
+	return res.Txhash, nil
 }

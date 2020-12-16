@@ -3,8 +3,8 @@ module github.com/VickMellon/loadtest
 go 1.15
 
 require (
-	github.com/cosmos/cosmos-sdk v0.37.14
-	github.com/cosmos/go-bip39 v1.0.0
+	github.com/stretchr/testify v1.6.1 // indirect
+	github.com/tendermint/go-amino v0.15.0 // indirect
 	github.com/tendermint/tendermint v0.32.13
-	github.com/valyala/fasthttp v1.18.0
+	golang.org/x/crypto v0.0.0-20200728195943-123391ffb6de // indirect
 )

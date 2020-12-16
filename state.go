@@ -3,10 +3,15 @@ package main
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"github.com/tendermint/tendermint/crypto/secp256k1"
 	"io/ioutil"
 	"log"
+	"net/url"
 	"os"
+	"strings"
+	"sync"
+	"time"
 )
 
 const (
@@ -14,22 +19,10 @@ const (
 )
 
 type state struct {
+	chainId string
+	nodes   []string
 	wallets []*wallet
-}
-
-func (s *state) newWallet(name string) {
-	pk := newPrivKey()
-	pb, _ := pk.PubKey().(secp256k1.PubKeySecp256k1)
-	addr, _ := addressFromPubKey(pb)
-	s.wallets = append(s.wallets, &wallet{
-		privKey:       pk,
-		pubKey:        pb,
-		name:          name,
-		address:       addr,
-		balance:       0,
-		accountNumber: 0,
-		sequence:      0,
-	})
+	workset []*wallet
 }
 
 type wallet struct {
@@ -40,9 +33,12 @@ type wallet struct {
 	balance       uint64 // uatolo
 	accountNumber uint64
 	sequence      uint64
+	s             sync.Mutex // for async access
 }
 
 type storageState struct {
+	ChainId string          `json:"chain_id"`
+	Nodes   []string        `json:"nodes"`
 	Wallets []storageWallet `json:"wallets"`
 }
 
@@ -64,6 +60,8 @@ func loadState() (s *state) {
 		log.Println("Can't parse state file", err)
 		return
 	}
+	s.chainId = ss.ChainId
+	s.nodes = ss.Nodes
 	s.wallets = make([]*wallet, 0, len(ss.Wallets))
 	for _, sw := range ss.Wallets {
 		w := &wallet{
@@ -95,9 +93,58 @@ func loadState() (s *state) {
 	return
 }
 
-func saveState(s *state) {
-	var ss storageState
-	ss.Wallets = make([]storageWallet, 0, len(s.wallets))
+func (s *state) checkConfig(chainId string, nodes string) {
+	var isUpdated bool
+	if chainId != "" {
+		s.chainId = chainId
+		isUpdated = true
+	}
+	if s.chainId == "" {
+		log.Fatalln("chainId is empty, please, specify --chain parameter")
+	}
+	if nodes != "" {
+		s.nodes = strings.Split(nodes, `,`)
+		isUpdated = true
+	}
+	if len(s.nodes) == 0 {
+		s.nodes = []string{restDefaultBaseUrl}
+		log.Println("nodes URL list is empty, default address will be used", restDefaultBaseUrl)
+	}
+	for _, r := range s.nodes {
+		if u, err := url.Parse(r); err != nil || u == nil {
+			log.Fatalln("node URL is invalid")
+		} else if u.Scheme == "" {
+			log.Fatalln("node URL is invalid, scheme required")
+		} else if u.Port() == "" {
+			log.Fatalln("node URL is invalid, port required")
+		}
+	}
+	if isUpdated {
+		s.saveState()
+	}
+}
+
+func (s *state) newWallet(name string) {
+	pk := newPrivKey()
+	pb, _ := pk.PubKey().(secp256k1.PubKeySecp256k1)
+	addr, _ := addressFromPubKey(pb)
+	s.wallets = append(s.wallets, &wallet{
+		privKey:       pk,
+		pubKey:        pb,
+		name:          name,
+		address:       addr,
+		balance:       0,
+		accountNumber: 0,
+		sequence:      0,
+	})
+}
+
+func (s *state) saveState() {
+	ss := storageState{
+		ChainId: s.chainId,
+		Nodes:   s.nodes,
+		Wallets: make([]storageWallet, 0, len(s.wallets)),
+	}
 	for _, w := range s.wallets {
 		ss.Wallets = append(ss.Wallets, storageWallet{
 			Name: w.name,
@@ -115,4 +162,125 @@ func saveState(s *state) {
 	if err != nil {
 		log.Fatal(err)
 	}
+}
+
+func (s *state) requestWorkset(n int) {
+	if n == 1 {
+		n = 2 // minimal workset is 2 wallets
+	}
+	if n > len(s.wallets) {
+		// generate more wallets
+		for i := len(s.wallets) + 1; i <= n; i++ {
+			s.newWallet(fmt.Sprintf("loadtest%d", i))
+		}
+		s.saveState()
+	}
+	// limit workset with only requested count of wallets
+	s.workset = s.wallets[:n]
+}
+
+func (s *state) equalizeBalances() {
+	n := len(s.workset)
+	if n == 0 {
+		log.Fatalln("empty workset, requestWorkset first")
+	} else if n == 1 {
+		// nothing to do for now
+		return
+	}
+	bank := s.workset[0]
+	var total uint64
+	for _, w := range s.workset {
+		total += w.balance
+	}
+	if total <= feesAmount*uint64(n-1)*2 {
+		log.Fatalln("total balance is too low, charge more tokens to", bank.address)
+	}
+	total = total - feesAmount*uint64(n-1)*2 // exclude balancing fees
+	each := total / uint64(n)                // target balance of each wallet in workset
+	if each <= 2*feesAmount {
+		log.Fatalln("total balance too low, charge more tokens to", bank.address)
+	}
+	var txs uint64
+	// stage 1 - cut excess balances to bank
+	for i := 1; i < n; i++ {
+		if s.workset[i].balance > each+feesAmount {
+			// this balance too high - transfer difference to bank
+			dif := s.workset[i].balance - (each + feesAmount)
+			tx := getSignedSendTx(s.workset[i].address, bank.address, dif,
+				"equalizeBalances", s.workset[i].privKey, s.chainId, s.workset[i].accountNumber, s.workset[i].sequence)
+			_, err := broadcastTx(tx, s.nodes[0], "sync")
+			for err == ErrMempoolIsFull {
+				// wait & retry
+				time.Sleep(100 * time.Millisecond)
+				_, err = broadcastTx(tx, s.nodes[0], "sync")
+			}
+			if err != nil {
+				log.Fatalln("equalizeBalances failed,", err)
+			}
+			s.workset[i].balance -= dif + feesAmount
+			s.workset[i].sequence++
+			bank.balance += dif
+			txs++
+		}
+	}
+	// stage 2 - deposit low balances from bank
+	for i := 1; i < n; i++ {
+		if s.workset[i].balance < each-feesAmount {
+			// this balance too low - get deposit from bank
+			dif := each - s.workset[i].balance
+			tx := getSignedSendTx(bank.address, s.workset[i].address, dif,
+				"equalizeBalances", bank.privKey, s.chainId, bank.accountNumber, bank.sequence)
+			_, err := broadcastTx(tx, s.nodes[0], "sync")
+			for err == ErrMempoolIsFull {
+				// wait & retry
+				time.Sleep(100 * time.Millisecond)
+				_, err = broadcastTx(tx, s.nodes[0], "sync")
+			}
+			if err != nil {
+				log.Fatalln("equalizeBalances failed,", err)
+			}
+			bank.balance -= dif + feesAmount
+			bank.sequence++
+			s.workset[i].balance += dif
+			txs++
+		}
+	}
+	if txs > 0 {
+		log.Println("waiting 10s for sure commits after equalize balances")
+		time.Sleep(time.Second * 10)
+	}
+}
+
+func (s *state) updateWorkset() {
+	if len(s.workset) == 0 {
+		log.Fatalln("updateWorkset failed - workset is empty")
+	}
+	updateW(s.workset, s.nodes[0])
+}
+func (s *state) updateWallets() {
+	if len(s.wallets) == 0 {
+		log.Fatalln("updateWallets failed - wallets is empty")
+	}
+	updateW(s.wallets, s.nodes[0])
+}
+func updateW(wallets []*wallet, baseUrl string) {
+	wg := &sync.WaitGroup{}
+	for i := range wallets {
+		wg.Add(1)
+		go func(k int, sw []*wallet) {
+			a := queryAccount(sw[k].address, baseUrl)
+			if a != nil {
+				sw[k].balance = a.balance
+				sw[k].accountNumber = a.accountNumber
+				sw[k].sequence = a.sequence
+			} else {
+				sw[k].balance = 0
+				sw[k].accountNumber = 0
+				sw[k].sequence = 0
+			}
+			wg.Done()
+		}(i, wallets)
+		time.Sleep(2 * time.Millisecond) // to keep friendly rps rate
+	}
+	wg.Wait()
 }

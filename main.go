@@ -1,84 +1,82 @@
 package main
 
 import (
-	"fmt"
+	"flag"
+	"log"
+	"sync"
 	"time"
 )
 
-type localKey struct {
-	Name     string `json:"name"`
-	Type     string `json:"type"`
-	Address  string `json:"address"`
-	Pubkey   string `json:"pubkey"`
-	Mnemonic string `json:"mnemonic"`
-}
-
 var (
-	keys map[string]localKey // indexed by name
+	c, n    uint64
+	t       time.Duration
+	nodes   string
+	chainId string
 )
 
-func main() {
-	acc := queryAccount("friday1gx8epcnd8dt64hukgmuwh4cctwuxmhrrfdgtex")
-	fmt.Println(acc)
-	t1 := time.Now()
-	s := loadState()
-	fmt.Println(time.Now().Sub(t1))
-	//s.newWallet("loadtest1")
-	//s.newWallet("loadtest2")
-	fmt.Println(s.wallets[0].address)
-	fmt.Println(s.wallets[1].address)
-	//saveState(s)
-	sig := signTxWithPk(s.wallets[0].privKey, "f2test", 11, 0)
-	fmt.Println(string(sig))
-
-	fmt.Println(time.Now().Sub(t1))
-	return
-	//
-	//	pkExp := exportPrivKey("loadtest1")
-	//
-	//	fmt.Println(base64.StdEncoding.EncodeToString([]byte(pkExp)))
-	//
-	//	pk, _ := unarmorDecryptPrivKey(pkExp, "loadtest1")
-	//	pb, _ := pk.PubKey().(secp256k1.PubKeySecp256k1)
-	//	fmt.Println(addressFromPubKey(pb))
-	//	return
-	//
-	//	keys = getKeysList()
-	//	//fmt.Println(keys)
-	//	//keys["loadtest2"] = addNewKey("loadtest2")
-	//	//fmt.Println(keys)
-	//	pk1, _ := unarmorDecryptPrivKey(`-----BEGIN TENDERMINT PRIVATE KEY-----
-	//kdf: bcrypt
-	//salt: 66C7730830513BA6BF0E318E3344E2C8
-	//
-	//Kwn72cMHop2R7leTdARMhjKbSq38J8PUfQtMXoJYdkezR2+nvqYXLQ6ltuJPE6FM
-	//kdoLnK3xlJSZ5f9K5Ae45f7OG/cMVMBSIjk6J+I=
-	//=8CTN
-	//-----END TENDERMINT PRIVATE KEY-----`, "QDxseR1l")
-	//
-	//pk2 := privKeyFromMnemonic(`glass height scan canvas truck undo shaft core lamp fatigue toilet lemon gift phone kitten aim fantasy siege beach lens unfair worth door badge`)
-	//
-	//fmt.Println(pk1.Equals(pk2))
-	//
-	//s := addressFromPubKey(pk2)
-	//fmt.Println(s)
-
-	//acc := queryAccount("friday1pl8g6zamy8566ktzgdqtc28e06dhrh7cna783h")
-	//fmt.Println(acc)
-	//
-	//tx := compileSendTx(keys["vick"].Address, keys["loadtest1"].Address, 100, "")
-	//
-	////fmt.Println(string(tx))
-	//signedTx := signTx(tx, keys["vick"].Address, 9, 2, "QDxseR1l")
-	//fmt.Println(string(signedTx))
-	////zeoValNTduFXl+rzwK3X9kxDh235E/v7GRlhPsKZTHhaohoftvNdGfV7xR/0Lqu9k2MFrsp+5UoBe7hPxwppCQ==
-	//
-	//signedTx2 := signTxWithPk(pk1, "f2test", "9", "2")
-	//fmt.Println(string(signedTx2))
-	////nGqjnuJ9oW8Z2U7t2Ev5Lcxg6h+uGn2j9k+NBJ0bqvkpl850u86ywosRcVSFRh4dibtgJLfmAD07JAO7mjSPcg==
-
+type config struct {
 }
 
-func compileSendTx(from, to string, amount uint64, memo string) []byte {
-	return []byte(fmt.Sprintf(sendTxTpl, from, to, amount, memo))
+func init() {
+	flag.Uint64Var(&c, `c`, 1, `Concurrency, number of async threads with requests`)
+	flag.Uint64Var(&n, `n`, 0, `Number of transactions to broadcast, 0 - unlimited`)
+	flag.DurationVar(&t, `t`, 0, `Test duration, 0 - unlimited`)
+
+	flag.StringVar(&chainId, `chain`, ``, `Chain ID`)
+	flag.StringVar(&nodes, `nodes`, ``, `List of REST servers, comma separated (default "http://localhost:1317")`)
+	flag.Parse()
+}
+
+func main() {
+	s := loadState()
+	s.checkConfig(chainId, nodes)
+	s.requestWorkset(int(c))
+	s.updateWorkset()
+	s.equalizeBalances()
+
+	wg := &sync.WaitGroup{}
+	pr := &process{
+		startedAt: time.Now(),
+		txLimit:   n,
+	}
+	if t > 0 {
+		pr.mustStopAfter = pr.startedAt.Add(t)
+	}
+	var totalStartBalance, totalFinishBalance uint64
+	pr.startBalances = make([]uint64, len(s.workset))
+	for i, w := range s.workset {
+		pr.startBalances[i] = w.balance
+		totalStartBalance += w.balance
+		//log.Println("[", w.address, "] ", w.balance)
+	}
+	log.Println("Initial total balance -", totalStartBalance, ", avg -", int(totalStartBalance)/len(s.workset),
+		", estimated Txs -", totalStartBalance/uint64(len(s.workset))/(sendAmount+feesAmount)*uint64(len(s.workset)))
+	// Go!
+	for i := 0; i < int(c); i++ {
+		go spender(wg, s.workset[i], s.workset, sendAmount, s.nodes[i%len(s.nodes)], s.chainId, pr)
+		wg.Add(1)
+	}
+	wg.Wait()
+	log.Println("waiting 30s for sure commits")
+	time.Sleep(time.Second * 30)
+	pr.finishBalances = make([]uint64, len(s.workset))
+	for i, w := range s.workset {
+		pr.finishBalances[i] = w.balance
+		totalFinishBalance += w.balance
+	}
+	s.updateWorkset()
+	log.Println("Checking final balances...")
+	ok := true
+	for i, w := range s.workset {
+		if pr.finishBalances[i] != w.balance {
+			ok = false
+			log.Println("FAIL! expected final balance not equal to actual: [", w.address, "] ", pr.finishBalances[i], "!=", w.balance)
+		}
+		//log.Println("[", w.address, "] ", w.balance)
+	}
+	if ok {
+		log.Println("SUCCESS")
+	}
+	log.Println("Final total balance -", totalFinishBalance, ", avg -", int(totalFinishBalance)/len(s.workset),
+		", estimated Txs -", totalFinishBalance/uint64(len(s.workset))/(sendAmount+feesAmount)*uint64(len(s.workset)))
 }
