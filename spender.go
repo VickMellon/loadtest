@@ -64,12 +64,12 @@ func spender(wg *sync.WaitGroup, from *wallet, workset []*wallet, amount uint64,
 		}
 		p.s.Unlock()
 
-		_, err = broadcastTx(tx, nodeUrl, "async")
+		_, err = broadcastTx(tx, nodeUrl, "sync")
 		for err == ErrMempoolIsFull || err == ErrTooManyOpenFiles {
 			// wait & retry
 			time.Sleep(retryInt)
 			retryInt *= 2 // progressive pause
-			_, err = broadcastTx(tx, nodeUrl, "async")
+			_, err = broadcastTx(tx, nodeUrl, "sync")
 		}
 		retryInt = time.Millisecond // reset progressive pause
 		if err != nil {
