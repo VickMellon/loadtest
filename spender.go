@@ -29,6 +29,7 @@ func spender(wg *sync.WaitGroup, from *wallet, workset []*wallet, amount uint64,
 	var to *wallet
 	var tx string
 	var err error
+	log.Println("All Txs for wallet", from.address, " will be sent to node:", nodeUrl)
 	retryInt := 10 * time.Millisecond
 	l := len(workset)
 	for {
