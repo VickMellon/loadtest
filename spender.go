@@ -29,7 +29,7 @@ func spender(wg *sync.WaitGroup, from *wallet, workset []*wallet, amount uint64,
 	var to *wallet
 	var tx string
 	var err error
-	retryInt := time.Millisecond
+	retryInt := 10 * time.Millisecond
 	l := len(workset)
 	for {
 		// select target wallet
@@ -68,10 +68,12 @@ func spender(wg *sync.WaitGroup, from *wallet, workset []*wallet, amount uint64,
 		for err == ErrMempoolIsFull || err == ErrTooManyOpenFiles {
 			// wait & retry
 			time.Sleep(retryInt)
-			retryInt *= 2 // progressive pause
+			if retryInt < time.Second {
+				retryInt *= 2 // progressive pause, but not longer 1s
+			}
 			_, err = broadcastTx(tx, nodeUrl, "sync")
 		}
-		retryInt = time.Millisecond // reset progressive pause
+		retryInt = 10 * time.Millisecond // reset progressive pause
 		if err != nil {
 			log.Println("broadcast FAIL, tx:", tx)
 			break
