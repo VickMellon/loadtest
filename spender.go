@@ -54,8 +54,8 @@ func spender(wg *sync.WaitGroup, from *wallet, workset []*wallet, amount uint64,
 			from.s.Unlock()
 			return // source wallet out of tokens
 		}
-		from.s.Unlock()
 		tx = getSignedSendTx(from.address, to.address, amount, "", from.privKey, chainId, from.accountNumber, from.sequence)
+		from.s.Unlock()
 		// check again right before broadcast to prevent excess Txs
 		p.s.Lock()
 		if p.finish {
@@ -68,14 +68,14 @@ func spender(wg *sync.WaitGroup, from *wallet, workset []*wallet, amount uint64,
 		for err == ErrMempoolIsFull || err == ErrTooManyOpenFiles {
 			// wait & retry
 			time.Sleep(retryInt)
-			if retryInt < time.Second {
-				retryInt *= 2 // progressive pause, but not longer 1s
+			if retryInt < 100*time.Millisecond {
+				retryInt *= 2 // progressive pause, but not longer 100ms
 			}
 			_, err = broadcastTx(tx, nodeUrl, "sync")
 		}
 		retryInt = 10 * time.Millisecond // reset progressive pause
 		if err != nil {
-			log.Println("broadcast FAIL, tx:", tx)
+			log.Println("broadcast FAIL, with sequence:", from.sequence, " tx:", tx)
 			break
 		}
 		// calc balances
@@ -90,7 +90,7 @@ func spender(wg *sync.WaitGroup, from *wallet, workset []*wallet, amount uint64,
 		if p.CalcTx() {
 			return
 		}
-		time.Sleep(30 * time.Millisecond) // prevent flooding of mempool with too fast requests
+		time.Sleep(2 * time.Millisecond) // prevent flooding of mempool with too fast requests
 	}
 }
 
@@ -123,9 +123,9 @@ func (p *process) CalcTx() bool {
 	// update progress line each 100 Txs
 	if p.sentTx%100 == 0 {
 		fmt.Print("\r\x1b[2K") // clear line
-		fmt.Print("\rProgress - ", p.sentTx, " Txs was sent")
+		fmt.Print("\rProgress - ", p.sentTx, " Txs was sent,")
 		if p.txLimit > 0 {
-			fmt.Print(", another ", p.txLimit-p.sentTx, " Txs")
+			fmt.Print(" another ", p.txLimit-p.sentTx, " Txs")
 		}
 		if !p.mustStopAfter.IsZero() {
 			if p.txLimit > 0 {
