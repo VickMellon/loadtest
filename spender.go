@@ -90,7 +90,7 @@ func spender(wg *sync.WaitGroup, from *wallet, workset []*wallet, amount uint64,
 		if p.CalcTx() {
 			return
 		}
-		time.Sleep(time.Millisecond) // prevent flooding of mempool with too fast requests
+		time.Sleep(30 * time.Millisecond) // prevent flooding of mempool with too fast requests
 	}
 }
 
