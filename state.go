@@ -43,8 +43,9 @@ type storageState struct {
 }
 
 type storageWallet struct {
-	Name string `json:"name"` // contract: also used as password
-	Pk   string `json:"pk"`   // base64 encoded
+	Name    string `json:"name"` // contract: also used as password
+	Address string `json:"address"`
+	Pk      string `json:"pk"` // base64 encoded
 }
 
 func loadState() (s *state) {
@@ -147,8 +148,9 @@ func (s *state) saveState() {
 	}
 	for _, w := range s.wallets {
 		ss.Wallets = append(ss.Wallets, storageWallet{
-			Name: w.name,
-			Pk:   base64.StdEncoding.EncodeToString(w.privKey[:]),
+			Name:    w.name,
+			Address: w.address,
+			Pk:      base64.StdEncoding.EncodeToString(w.privKey[:]),
 		})
 	}
 	stateFile, err := os.Create(stateFileName)
