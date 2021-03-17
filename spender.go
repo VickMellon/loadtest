@@ -17,6 +17,7 @@ type process struct {
 	txLimit        uint64
 	sentTx         uint64
 	finish         bool
+	interactive    bool
 	timeSpent      time.Duration
 	delayUpTo      time.Duration
 	delayNow       time.Duration
@@ -120,13 +121,20 @@ func (p *process) CalcTx() bool {
 	}
 	// final stat
 	if p.finish {
-		fmt.Print("\r\x1b[2K") // clear line
+		if p.interactive {
+			fmt.Print("\r\x1b[2K") // clear line
+		}
 		timeSpent := time.Now().Sub(p.startedAt)
 		rps := p.sentTx
 		if timeSpent.Seconds() > 1 {
 			rps /= uint64(timeSpent.Seconds())
 		}
-		fmt.Print("\rDONE - ", p.sentTx, " Txs was sent, ", timeSpent, " time was spent, rps - ", rps, "\n")
+		if p.interactive {
+			fmt.Print("\r")
+		} else {
+			fmt.Print("\n")
+		}
+		fmt.Print("DONE - ", p.sentTx, " Txs was sent, ", timeSpent, " time was spent, rps - ", rps, "\n")
 		return true
 	}
 	// change delay each 1000 txs
@@ -136,8 +144,15 @@ func (p *process) CalcTx() bool {
 	}
 	// update progress line each 100 Txs
 	if p.sentTx%100 == 0 {
-		fmt.Print("\r\x1b[2K") // clear line
-		fmt.Print("\rProgress - ", p.sentTx, " Txs was sent,")
+		if p.interactive {
+			fmt.Print("\r\x1b[2K") // clear line
+		}
+		if p.interactive {
+			fmt.Print("\r")
+		} else {
+			fmt.Print("\n")
+		}
+		fmt.Print("Progress - ", p.sentTx, " Txs was sent,")
 		if p.txLimit > 0 {
 			fmt.Print(" another ", p.txLimit-p.sentTx, " Txs")
 		}
@@ -151,7 +166,9 @@ func (p *process) CalcTx() bool {
 		if p.delayUpTo > 0 {
 			fmt.Printf(", current delay: %v", p.delayNow)
 		}
-		fmt.Print("\r")
+		if p.interactive {
+			fmt.Print("\r")
+		}
 	}
 	return p.finish
 }

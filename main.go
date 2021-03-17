@@ -11,6 +11,7 @@ import (
 var (
 	c, n    uint64
 	t, p    time.Duration
+	l       bool
 	nodes   string
 	chainId string
 )
@@ -23,6 +24,7 @@ func init() {
 	flag.Uint64Var(&n, `n`, 0, `Number of transactions to broadcast, 0 - unlimited`)
 	flag.DurationVar(&t, `t`, 0, `Test duration, 0 - unlimited`)
 	flag.DurationVar(&p, `p`, 0, `Random delays, up to value`)
+	flag.BoolVar(&l, `l`, false, `Logging mode, not interactive`)
 
 	flag.StringVar(&chainId, `chain`, ``, `Chain ID`)
 	flag.StringVar(&nodes, `nodes`, ``, `List of REST servers, comma separated (default "http://localhost:8545")`)
@@ -40,10 +42,11 @@ func main() {
 
 	wg := &sync.WaitGroup{}
 	pr := &process{
-		startedAt: time.Now(),
-		txLimit:   n,
-		delayUpTo: p,
-		delayNow:  p / 2,
+		startedAt:   time.Now(),
+		txLimit:     n,
+		delayUpTo:   p,
+		delayNow:    p / 2,
+		interactive: !l,
 	}
 	if t > 0 {
 		pr.mustStopAfter = pr.startedAt.Add(t)
