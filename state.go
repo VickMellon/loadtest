@@ -217,11 +217,11 @@ func (s *state) equalizeBalances() {
 		if amount > 0 {
 			tx := getSignedSendTx(s.wallets[i].address, bank.address, amount,
 				"equalizeBalances", s.wallets[i].privKey, s.chainId, s.wallets[i].accountNumber, s.wallets[i].sequence)
-			_, err := broadcastTx(tx, s.nodes[0], "sync")
+			_, err := broadcastTx(tx, s.nodes[0], "async")
 			for err == ErrMempoolIsFull {
 				// wait & retry
 				time.Sleep(100 * time.Millisecond)
-				_, err = broadcastTx(tx, s.nodes[0], "sync")
+				_, err = broadcastTx(tx, s.nodes[0], "async")
 			}
 			if err != nil {
 				log.Fatalln("equalizeBalances failed,", err)
@@ -240,11 +240,11 @@ func (s *state) equalizeBalances() {
 			dif := each - s.workset[i].balance
 			tx := getSignedSendTx(bank.address, s.workset[i].address, dif,
 				"equalizeBalances", bank.privKey, s.chainId, bank.accountNumber, bank.sequence)
-			_, err := broadcastTx(tx, s.nodes[0], "sync")
+			_, err := broadcastTx(tx, s.nodes[0], "async")
 			for err == ErrMempoolIsFull {
 				// wait & retry
 				time.Sleep(100 * time.Millisecond)
-				_, err = broadcastTx(tx, s.nodes[0], "sync")
+				_, err = broadcastTx(tx, s.nodes[0], "async")
 			}
 			if err != nil {
 				log.Fatalln("equalizeBalances failed,", err)

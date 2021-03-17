@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	restDefaultBaseUrl = `http://localhost:1317`
+	restDefaultBaseUrl = `http://localhost:8545`
 	restGetAccount     = `/auth/accounts/`
 	restBroadcastTx    = `/txs`
 )
@@ -30,8 +30,8 @@ type accountResponse struct {
 				Denom  string `json:"denom"`
 				Amount string `json:"amount"`
 			} `json:"coins"`
-			AccountNumber string `json:"account_number"`
-			Sequence      string `json:"sequence"`
+			AccountNumber uint64 `json:"account_number"`
+			Sequence      uint64 `json:"sequence"`
 		} `json:"value"`
 	} `json:"result"`
 }
@@ -68,19 +68,18 @@ func queryAccount(address, nodeUrl string) *account {
 	// parse response
 	var res accountResponse
 	if err = json.Unmarshal(respBody, &res); err != nil {
-		log.Fatal(err)
+		log.Println(err)
+		return &account{address: address}
 	}
 	if res.Result.Value.Address != address || len(res.Result.Value.Coins) == 0 {
 		return nil
 	}
 	bal, err := strconv.ParseInt(res.Result.Value.Coins[0].Amount, 10, 64)
-	anum, err := strconv.ParseInt(res.Result.Value.AccountNumber, 10, 64)
-	seq, err := strconv.ParseInt(res.Result.Value.Sequence, 10, 64)
 	return &account{
 		address:       address,
 		balance:       uint64(bal),
-		accountNumber: uint64(anum),
-		sequence:      uint64(seq),
+		accountNumber: res.Result.Value.AccountNumber,
+		sequence:      res.Result.Value.Sequence,
 	}
 }
 

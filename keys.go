@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	AccountAddressPrefix = `friday`
+	AccountAddressPrefix = `eth`
 )
 
 func newPrivKey() secp256k1.PrivKeySecp256k1 {

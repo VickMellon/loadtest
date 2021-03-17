@@ -10,10 +10,10 @@ import (
 
 const (
 	sendAmount = uint64(1)
-	feesAmount = uint64(100)
-	toSigTpl   = `{"account_number":"%d","chain_id":"%s","fee":{"amount":[{"amount":"%d","denom":"uatolo"}],"gas":"200000"},"memo":"%s","msgs":[{"type":"cosmos-sdk/MsgSend","value":{"amount":[{"amount":"%d","denom":"uatolo"}],"from_address":"%s","to_address":"%s"}}],"sequence":"%d"}`
+	feesAmount = uint64(0)
+	toSigTpl   = `{"account_number":"%d","chain_id":"%s","fee":{"amount":[{"amount":"%d","denom":"aphoton"}],"gas":"200000"},"memo":"%s","msgs":[{"type":"cosmos-sdk/MsgSend","value":{"amount":[{"amount":"%d","denom":"aphoton"}],"from_address":"%s","to_address":"%s"}}],"sequence":"%d"}`
 	sigTpl     = `[{"pub_key":{"type":"tendermint/PubKeySecp256k1","value":"%s"},"signature":"%s"}]`
-	sendTxTpl  = `{"msg":[{"type":"cosmos-sdk/MsgSend","value":{"from_address":"%s","to_address":"%s","amount":[{"denom":"uatolo","amount":"%d"}]}}],"fee":{"amount":[{"denom":"uatolo","amount":"%d"}],"gas":"200000"},"signatures":%s,"memo":"%s"}`
+	sendTxTpl  = `{"msg":[{"type":"cosmos-sdk/MsgSend","value":{"from_address":"%s","to_address":"%s","amount":[{"denom":"aphoton","amount":"%d"}]}}],"fee":{"amount":[{"denom":"aphoton","amount":"%d"}],"gas":"200000"},"signatures":%s,"memo":"%s"}`
 )
 
 func getSignedSendTx(from, to string, amount uint64, memo string,

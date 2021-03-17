@@ -3,13 +3,14 @@ package main
 import (
 	"flag"
 	"log"
+	"math/rand"
 	"sync"
 	"time"
 )
 
 var (
 	c, n    uint64
-	t       time.Duration
+	t, p    time.Duration
 	nodes   string
 	chainId string
 )
@@ -21,10 +22,12 @@ func init() {
 	flag.Uint64Var(&c, `c`, 1, `Concurrency, number of async threads with requests`)
 	flag.Uint64Var(&n, `n`, 0, `Number of transactions to broadcast, 0 - unlimited`)
 	flag.DurationVar(&t, `t`, 0, `Test duration, 0 - unlimited`)
+	flag.DurationVar(&p, `p`, 0, `Random delays, up to value`)
 
 	flag.StringVar(&chainId, `chain`, ``, `Chain ID`)
-	flag.StringVar(&nodes, `nodes`, ``, `List of REST servers, comma separated (default "http://localhost:1317")`)
+	flag.StringVar(&nodes, `nodes`, ``, `List of REST servers, comma separated (default "http://localhost:8545")`)
 	flag.Parse()
+	rand.Seed(time.Now().UTC().UnixNano())
 }
 
 func main() {
@@ -39,6 +42,8 @@ func main() {
 	pr := &process{
 		startedAt: time.Now(),
 		txLimit:   n,
+		delayUpTo: p,
+		delayNow:  p / 2,
 	}
 	if t > 0 {
 		pr.mustStopAfter = pr.startedAt.Add(t)

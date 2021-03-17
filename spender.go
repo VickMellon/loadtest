@@ -13,10 +13,13 @@ type process struct {
 	finishBalances []uint64
 	startedAt      time.Time
 	mustStopAfter  time.Time
+	nextDelayAfter time.Time
 	txLimit        uint64
 	sentTx         uint64
 	finish         bool
 	timeSpent      time.Duration
+	delayUpTo      time.Duration
+	delayNow       time.Duration
 	s              sync.Mutex
 }
 
@@ -65,18 +68,18 @@ func spender(wg *sync.WaitGroup, from *wallet, workset []*wallet, amount uint64,
 		}
 		p.s.Unlock()
 
-		_, err = broadcastTx(tx, nodeUrl, "sync")
+		_, err = broadcastTx(tx, nodeUrl, "async")
 		for err == ErrMempoolIsFull || err == ErrTooManyOpenFiles {
 			// wait & retry
 			time.Sleep(retryInt)
 			if retryInt < 100*time.Millisecond {
 				retryInt *= 2 // progressive pause, but not longer 100ms
 			}
-			_, err = broadcastTx(tx, nodeUrl, "sync")
+			_, err = broadcastTx(tx, nodeUrl, "async")
 		}
 		retryInt = 10 * time.Millisecond // reset progressive pause
 		if err != nil {
-			log.Println("broadcast FAIL, with sequence:", from.sequence, " tx:", tx)
+			log.Println("broadcast FAIL, with sequence:", from.sequence, " tx:", tx, " err:", err)
 			break
 		}
 		// calc balances
@@ -91,7 +94,12 @@ func spender(wg *sync.WaitGroup, from *wallet, workset []*wallet, amount uint64,
 		if p.CalcTx() {
 			return
 		}
-		time.Sleep(2 * time.Millisecond) // prevent flooding of mempool with too fast requests
+		// current delay
+		if p.delayUpTo > 0 {
+			time.Sleep(p.delayNow)
+		}
+		// default minimal delay to prevent flooding of mempool with too fast requests
+		time.Sleep(2 * time.Millisecond)
 	}
 }
 
@@ -121,6 +129,11 @@ func (p *process) CalcTx() bool {
 		fmt.Print("\rDONE - ", p.sentTx, " Txs was sent, ", timeSpent, " time was spent, rps - ", rps, "\n")
 		return true
 	}
+	// change delay each 1000 txs
+	if p.delayUpTo > 0 && time.Now().After(p.nextDelayAfter) {
+		p.delayNow = time.Duration(rand.Int63n(int64(p.delayUpTo)))
+		p.nextDelayAfter = time.Now().Add(10 * p.delayNow)
+	}
 	// update progress line each 100 Txs
 	if p.sentTx%100 == 0 {
 		fmt.Print("\r\x1b[2K") // clear line
@@ -134,7 +147,11 @@ func (p *process) CalcTx() bool {
 			}
 			fmt.Print(" ", p.mustStopAfter.Sub(time.Now()))
 		}
-		fmt.Print(" left\r")
+		fmt.Print(" left")
+		if p.delayUpTo > 0 {
+			fmt.Printf(", current delay: %v", p.delayNow)
+		}
+		fmt.Print("\r")
 	}
 	return p.finish
 }
