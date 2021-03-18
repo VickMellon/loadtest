@@ -81,7 +81,8 @@ func spender(wg *sync.WaitGroup, from *wallet, workset []*wallet, amount uint64,
 		retryInt = 10 * time.Millisecond // reset progressive pause
 		if err != nil {
 			log.Println("broadcast FAIL, with sequence:", from.sequence, " tx:", tx, " err:", err)
-			break
+			time.Sleep(time.Second)
+			continue
 		}
 		// calc balances
 		from.s.Lock()

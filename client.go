@@ -88,12 +88,12 @@ func broadcastTx(tx string, nodeUrl, mode string) (string, error) {
 	rb := strings.NewReader(btx)
 	resp, err := http.Post(nodeUrl+restBroadcastTx, `application/json`, rb)
 	if err != nil {
-		log.Fatalln(err)
+		return "", err
 	}
 	defer resp.Body.Close()
 	respBody, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		log.Fatalln(err)
+		return "", err
 	}
 	if resp.StatusCode == http.StatusInternalServerError &&
 		strings.Contains(string(respBody), `mempool is full`) {
