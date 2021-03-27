@@ -16,6 +16,7 @@ type process struct {
 	nextDelayAfter time.Time
 	txLimit        uint64
 	sentTx         uint64
+	valuesCount    uint64
 	finish         bool
 	interactive    bool
 	timeSpent      time.Duration

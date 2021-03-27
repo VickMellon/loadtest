@@ -103,8 +103,7 @@ func broadcastTx(tx string, nodeUrl, mode string) (string, error) {
 		strings.Contains(string(respBody), `too many open files`) {
 		return "", ErrTooManyOpenFiles
 	}
-	if resp.StatusCode != http.StatusOK ||
-		(mode == "sync" && !strings.Contains(string(respBody), `success`)) {
+	if resp.StatusCode != http.StatusOK {
 		log.Println("broadcastTx response - ", resp.Status)
 		log.Println("broadcastTx response body: ", string(respBody))
 		return "", errors.New("broadcastTx error")
