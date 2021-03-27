@@ -6,6 +6,7 @@ import (
 	"log"
 	"math/big"
 	"math/rand"
+	"strings"
 	"sync"
 	"time"
 )
@@ -24,20 +25,20 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 		nextCall = 1
 	}
 	for {
-		// check source balance
+		retryInt := 10 * time.Millisecond
 		from.s.Lock()
+		// check source balance
 		if from.balance <= gasWanted {
 			log.Println("wallet", from.address, " out of tokens:", from.balance)
-			from.s.Unlock()
 			return // source wallet out of tokens
 		}
 		auth.GasLimit = gasWanted
 		auth.Nonce = big.NewInt(int64(from.sequence))
-		from.s.Unlock()
 		// check again right before broadcast to prevent excess Txs
 		p.s.Lock()
 		if p.finish {
 			p.s.Unlock()
+			from.s.Unlock()
 			return
 		}
 		p.s.Unlock()
@@ -45,6 +46,14 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 		amount := big.NewInt(rand.Int63())
 		if nextCall == 1 {
 			_, err = instance.SetNumberValue(auth, amount)
+			for err != nil && parseInstanceError(err) == ErrMempoolIsFull {
+				// wait & retry
+				time.Sleep(retryInt)
+				if retryInt < time.Second {
+					retryInt *= 2 // progressive pause, but not longer 1s
+				}
+				_, err = instance.SetNumberValue(auth, amount)
+			}
 			if err != nil {
 				log.Println("call SetNumberValue() FAIL, with sequence:", from.sequence, " err:", err)
 				time.Sleep(time.Second)
@@ -52,6 +61,14 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 			}
 		} else if nextCall == 2 {
 			_, err = instance.AddValue(auth, amount)
+			for err != nil && parseInstanceError(err) == ErrMempoolIsFull {
+				// wait & retry
+				time.Sleep(retryInt)
+				if retryInt < time.Second {
+					retryInt *= 2 // progressive pause, but not longer 1s
+				}
+				_, err = instance.AddValue(auth, amount)
+			}
 			if err != nil {
 				log.Println("call AddValue() FAIL, with sequence:", from.sequence, " err:", err)
 				time.Sleep(time.Second)
@@ -63,7 +80,6 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 		} else {
 			log.Fatalln("invalid nextCall")
 		}
-		from.s.Lock()
 		from.balance -= gasWanted
 		from.sequence++
 		from.s.Unlock()
@@ -97,4 +113,15 @@ func getValuesCount(instance *MiniStore.MiniStore) (uint64, error) {
 		return 0, errors.Wrap(err, "fail to GetNumberValue")
 	}
 	return res.Uint64(), nil
+}
+
+func parseInstanceError(err error) error {
+	if err == nil {
+		return nil
+	}
+	s := err.Error()
+	if strings.Contains(s, "-32000") {
+		return ErrMempoolIsFull
+	}
+	return err
 }
