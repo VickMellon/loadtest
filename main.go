@@ -80,7 +80,6 @@ func main() {
 	// Go!
 	for i := 0; i < int(c); i++ {
 		if m > 0 {
-			log.Println("All SC calls from wallet", s.workset[i].address, " will be sent to node:", s.nodes[i%len(s.nodes)])
 			go sc_caller(wg, s.workset[i], s.instances[i%len(s.nodes)], pr, m)
 		} else {
 			go spender(wg, s.workset[i], s.workset, sendAmount, s.nodes[i%len(s.nodes)], s.chainId, pr)
@@ -88,8 +87,8 @@ func main() {
 		wg.Add(1)
 	}
 	wg.Wait()
-	log.Println("waiting 30s for sure commits")
-	time.Sleep(time.Second * 30)
+	log.Println("waiting 60s for sure commits")
+	time.Sleep(time.Second * 60)
 	pr.finishBalances = make([]uint64, len(s.workset))
 	for i, w := range s.workset {
 		pr.finishBalances[i] = w.balance

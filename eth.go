@@ -6,6 +6,8 @@ import (
 	"log"
 	"math/big"
 	"math/rand"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -16,10 +18,13 @@ const (
 	gasWanted = uint64(50000)
 )
 
+var (
+	parseSeq = regexp.MustCompile(`[0-9]+`)
+)
+
 func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, p *process, mode uint64) {
 	var err error
 	defer wg.Done()
-	auth := from.auth
 	nextCall := mode
 	if mode == 3 {
 		nextCall = 1
@@ -32,6 +37,7 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 			log.Println("wallet", from.address, " out of tokens:", from.balance)
 			return // source wallet out of tokens
 		}
+		auth := from.auth
 		auth.GasLimit = gasWanted
 		auth.Nonce = big.NewInt(int64(from.sequence))
 		// check again right before broadcast to prevent excess Txs
@@ -46,6 +52,12 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 		amount := big.NewInt(rand.Int63())
 		if nextCall == 1 {
 			_, err = instance.SetNumberValue(auth, amount)
+			if seq := parseSequenceError(err); seq > 0 {
+				// fix failed sequence & retry
+				from.sequence = seq
+				auth.Nonce = big.NewInt(int64(from.sequence))
+				_, err = instance.SetNumberValue(auth, amount)
+			}
 			for err != nil && parseInstanceError(err) == ErrMempoolIsFull {
 				// wait & retry
 				time.Sleep(retryInt)
@@ -56,11 +68,17 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 			}
 			if err != nil {
 				log.Println("call SetNumberValue() FAIL, with sequence:", from.sequence, " err:", err)
-				time.Sleep(time.Second)
-				continue
+				from.s.Unlock()
+				return
 			}
 		} else if nextCall == 2 {
 			_, err = instance.AddValue(auth, amount)
+			if seq := parseSequenceError(err); seq > 0 {
+				// fix failed sequence & retry
+				from.sequence = seq
+				auth.Nonce = big.NewInt(int64(from.sequence))
+				_, err = instance.AddValue(auth, amount)
+			}
 			for err != nil && parseInstanceError(err) == ErrMempoolIsFull {
 				// wait & retry
 				time.Sleep(retryInt)
@@ -71,8 +89,8 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 			}
 			if err != nil {
 				log.Println("call AddValue() FAIL, with sequence:", from.sequence, " err:", err)
-				time.Sleep(time.Second)
-				continue
+				from.s.Unlock()
+				return
 			}
 			p.s.Lock()
 			p.valuesCount++
@@ -124,4 +142,22 @@ func parseInstanceError(err error) error {
 		return ErrMempoolIsFull
 	}
 	return err
+}
+
+func parseSequenceError(err error) uint64 {
+	//invalid sequence: invalid nonce; got 68, expected 175
+	if err == nil {
+		return 0
+	}
+	s := err.Error()
+	if strings.Contains(s, "invalid sequence") {
+		res := parseSeq.FindAllString(s, -1)
+		if len(res) == 2 {
+			seq, err := strconv.ParseInt(res[1], 10, 64)
+			if err == nil {
+				return uint64(seq)
+			}
+		}
+	}
+	return 0
 }
