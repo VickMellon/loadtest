@@ -96,7 +96,7 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 		}
 		// current delay
 		if p.delayUpTo > 0 {
-			time.Sleep(p.delayNow)
+			time.Sleep(p.delayUpTo)
 		}
 		// default minimal delay to prevent flooding of mempool with too fast requests
 		time.Sleep(2 * time.Millisecond)
