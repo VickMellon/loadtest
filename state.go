@@ -396,6 +396,8 @@ func (s *state) deploySC() {
 		s.saveState()
 		log.Printf("Smart-contract was deployed on address: %s\n", newAddress.String())
 		s.initInstances() // recreate instances with new SC address
+		log.Println("waiting 10s for sure commit after deployment")
+		time.Sleep(time.Second * 10)
 	} else {
 		log.Printf("Smart-contract already existed on address: %s\n", s.sc_address.String())
 	}

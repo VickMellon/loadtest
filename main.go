@@ -38,10 +38,10 @@ func main() {
 	s.checkConfig(chainId, nodes)
 	s.requestWorkset(int(c))
 	s.updateWallets()
+	s.equalizeBalances()
 	s.initInstances()
 	s.initAuth()
 	s.deploySC()
-	s.equalizeBalances()
 	s.updateWorkset()
 
 	wg := &sync.WaitGroup{}
@@ -117,7 +117,8 @@ func main() {
 			log.Fatalln("Can't get final SC array values count:", err)
 		}
 		if actual == pr.valuesCount {
-			log.Println("Final SC array values count:", pr.valuesCount, " - MATCHED")
+			log.Println("MATCHED")
+			log.Println("Final SC array values count:", pr.valuesCount)
 		} else {
 			log.Println("FAIL! expected final SC array values count not equal to actual: ", pr.valuesCount, "!=", actual)
 		}
