@@ -53,7 +53,7 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 			if err != nil && parseInstanceError(err) == ErrMempoolIsFull {
 				// wait & retry
 				time.Sleep(retryInt)
-				if retryInt < 100*time.Millisecond {
+				if retryInt < time.Second {
 					retryInt *= 2 // progressive pause, but not longer 1s
 				}
 				continue
@@ -70,10 +70,10 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 			if err != nil && parseInstanceError(err) == ErrMempoolIsFull {
 				// wait & retry
 				time.Sleep(retryInt)
-				if retryInt < 100*time.Millisecond {
-					retryInt *= 2 // progressive pause, but not longer 100ms
+				if retryInt < time.Second {
+					retryInt *= 2 // progressive pause, but not longer 1s
 				}
-				_, err = instance.AddValue(auth, amount)
+				continue
 			} else if seq := parseSequenceError(err); seq > 0 {
 				// fix failed sequence & retry
 				from.sequence = seq
