@@ -55,8 +55,8 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 			if seq := parseSequenceError(err); seq > 0 {
 				// fix failed sequence & retry
 				from.sequence = seq
-				auth.Nonce = big.NewInt(int64(from.sequence))
-				_, err = instance.SetNumberValue(auth, amount)
+				from.s.Unlock()
+				continue
 			}
 			for err != nil && parseInstanceError(err) == ErrMempoolIsFull {
 				// wait & retry
@@ -76,8 +76,8 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 			if seq := parseSequenceError(err); seq > 0 {
 				// fix failed sequence & retry
 				from.sequence = seq
-				auth.Nonce = big.NewInt(int64(from.sequence))
-				_, err = instance.AddValue(auth, amount)
+				from.s.Unlock()
+				continue
 			}
 			for err != nil && parseInstanceError(err) == ErrMempoolIsFull {
 				// wait & retry
@@ -100,9 +100,9 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 		}
 		from.balance -= gasWanted
 		from.sequence++
-		from.s.Unlock()
 		// check process state
 		if p.CalcTx() {
+			from.s.Unlock()
 			return
 		}
 		// current delay
@@ -122,6 +122,7 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 		} else {
 			nextCall = mode
 		}
+		from.s.Unlock()
 	}
 }
 
