@@ -29,9 +29,8 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 	if mode == 3 {
 		nextCall = 1
 	}
+	retryInt := 10 * time.Millisecond
 	for {
-		retryInt := 10 * time.Millisecond
-		from.s.Lock()
 		// check source balance
 		if from.balance <= gasWanted {
 			log.Println("wallet", from.address, " out of tokens:", from.balance)
@@ -44,7 +43,6 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 		p.s.Lock()
 		if p.finish {
 			p.s.Unlock()
-			from.s.Unlock()
 			return
 		}
 		p.s.Unlock()
@@ -52,44 +50,36 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 		amount := big.NewInt(rand.Int63())
 		if nextCall == 1 {
 			_, err = instance.SetNumberValue(auth, amount)
-			if seq := parseSequenceError(err); seq > 0 {
-				// fix failed sequence & retry
-				from.sequence = seq
-				from.s.Unlock()
-				continue
-			}
-			for err != nil && parseInstanceError(err) == ErrMempoolIsFull {
+			if err != nil && parseInstanceError(err) == ErrMempoolIsFull {
 				// wait & retry
 				time.Sleep(retryInt)
-				if retryInt < time.Second {
+				if retryInt < 100*time.Millisecond {
 					retryInt *= 2 // progressive pause, but not longer 1s
 				}
-				_, err = instance.SetNumberValue(auth, amount)
-			}
-			if err != nil {
+				continue
+			} else if seq := parseSequenceError(err); seq > 0 {
+				// fix failed sequence & retry
+				from.sequence = seq
+				continue
+			} else if err != nil {
 				log.Println("call SetNumberValue() FAIL, with sequence:", from.sequence, " err:", err)
-				from.s.Unlock()
 				return
 			}
 		} else if nextCall == 2 {
 			_, err = instance.AddValue(auth, amount)
-			if seq := parseSequenceError(err); seq > 0 {
-				// fix failed sequence & retry
-				from.sequence = seq
-				from.s.Unlock()
-				continue
-			}
-			for err != nil && parseInstanceError(err) == ErrMempoolIsFull {
+			if err != nil && parseInstanceError(err) == ErrMempoolIsFull {
 				// wait & retry
 				time.Sleep(retryInt)
-				if retryInt < time.Second {
-					retryInt *= 2 // progressive pause, but not longer 1s
+				if retryInt < 100*time.Millisecond {
+					retryInt *= 2 // progressive pause, but not longer 100ms
 				}
 				_, err = instance.AddValue(auth, amount)
-			}
-			if err != nil {
+			} else if seq := parseSequenceError(err); seq > 0 {
+				// fix failed sequence & retry
+				from.sequence = seq
+				continue
+			} else if err != nil {
 				log.Println("call AddValue() FAIL, with sequence:", from.sequence, " err:", err)
-				from.s.Unlock()
 				return
 			}
 			p.s.Lock()
@@ -102,7 +92,6 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 		from.sequence++
 		// check process state
 		if p.CalcTx() {
-			from.s.Unlock()
 			return
 		}
 		// current delay
@@ -122,7 +111,7 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 		} else {
 			nextCall = mode
 		}
-		from.s.Unlock()
+		retryInt = 10 * time.Millisecond
 	}
 }
 
