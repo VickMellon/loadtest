@@ -59,6 +59,7 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 				continue
 			} else if seq := parseSequenceError(err); seq > 0 {
 				// fix failed sequence & retry
+				log.Println(from.address[:4], "fix sequence:", from.sequence, " to ", seq)
 				from.sequence = seq
 				continue
 			} else if err != nil {
@@ -76,6 +77,7 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 				continue
 			} else if seq := parseSequenceError(err); seq > 0 {
 				// fix failed sequence & retry
+				log.Println(from.address[:4], "fix sequence:", from.sequence, " to ", seq)
 				from.sequence = seq
 				continue
 			} else if err != nil {
