@@ -87,8 +87,8 @@ func main() {
 		wg.Add(1)
 	}
 	wg.Wait()
-	log.Println("waiting 60s for sure commits")
-	time.Sleep(time.Second * 60)
+	log.Println("waiting 30s for sure commits")
+	time.Sleep(time.Second * 30)
 	pr.finishBalances = make([]uint64, len(s.workset))
 	for i, w := range s.workset {
 		pr.finishBalances[i] = w.balance
@@ -109,7 +109,7 @@ func main() {
 	}
 	log.Println("Final total balance -", totalFinishBalance, ", avg -", int(totalFinishBalance)/len(s.workset),
 		", estimated Txs -", totalFinishBalance/uint64(len(s.workset))/(txCost)*uint64(len(s.workset)))
-	{
+	if m > 1 {
 		log.Println("Checking final SC array values count...")
 		actual, err := getValuesCount(s.instances[0])
 		if err != nil {

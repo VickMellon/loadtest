@@ -371,10 +371,18 @@ func (s *state) initAuth() {
 }
 
 func (s *state) deploySC() {
+	var err error
 	// check SC on current address
 	instance := s.instances[0]
 	// try to call SC
-	if _, err := instance.GetNumberValue(nil); err != nil {
+	_, err = instance.GetNumberValue(nil)
+	if err != nil {
+		// try again
+		time.Sleep(time.Second)
+		_, err = instance.GetNumberValue(nil)
+	}
+	if err != nil {
+		log.Printf("Smart-contract was not found on address: %s, err: %v\n", s.sc_address.String(), err)
 		// no SC at given newAddress, let deploy a new one, from first wallet
 		client, err := ethclient.Dial(s.nodes[0])
 		if err != nil {

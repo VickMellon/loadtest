@@ -50,7 +50,7 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 		amount := big.NewInt(rand.Int63())
 		if nextCall == 1 {
 			_, err = instance.SetNumberValue(auth, amount)
-			if err != nil && parseInstanceError(err) == ErrMempoolIsFull {
+			if pErr := parseInstanceError(err); pErr == ErrMempoolIsFull || pErr == ErrTooManyOpenFiles {
 				// wait & retry
 				//log.Println(from.address[:8], "retry after:", retryInt.String())
 				time.Sleep(retryInt)
@@ -60,6 +60,13 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 				continue
 			} else if seq := parseSequenceError(err); seq > 0 {
 				// fix failed sequence & retry
+				//if from.sequence > seq {
+				//	time.Sleep(retryInt)
+				//	if retryInt < 100*time.Millisecond {
+				//		retryInt *= 2 // progressive pause, but not longer 1s
+				//	}
+				//	continue
+				//}
 				log.Println(from.address[:8], "fix sequence:", from.sequence, " to ", seq)
 				from.sequence = seq
 				continue
@@ -69,7 +76,7 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 			}
 		} else if nextCall == 2 {
 			_, err = instance.AddValue(auth, amount)
-			if err != nil && parseInstanceError(err) == ErrMempoolIsFull {
+			if pErr := parseInstanceError(err); pErr == ErrMempoolIsFull || pErr == ErrTooManyOpenFiles {
 				// wait & retry
 				//log.Println(from.address[:8], "retry after:", retryInt.String())
 				time.Sleep(retryInt)
@@ -79,6 +86,13 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 				continue
 			} else if seq := parseSequenceError(err); seq > 0 {
 				// fix failed sequence & retry
+				//if from.sequence > seq {
+				//	time.Sleep(retryInt)
+				//	if retryInt < 100*time.Millisecond {
+				//		retryInt *= 2 // progressive pause, but not longer 1s
+				//	}
+				//	continue
+				//}
 				log.Println(from.address[:8], "fix sequence:", from.sequence, " to ", seq)
 				from.sequence = seq
 				continue
@@ -134,6 +148,9 @@ func parseInstanceError(err error) error {
 	s := err.Error()
 	if strings.Contains(s, "-32000") {
 		return ErrMempoolIsFull
+	}
+	if strings.Contains(s, "too many open files") {
+		return ErrTooManyOpenFiles
 	}
 	return err
 }

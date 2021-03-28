@@ -41,6 +41,7 @@ type broadcastResponse struct {
 	Logs   []struct {
 		Success bool `json:"success"`
 	} `json:"logs"`
+	Code uint64 `json:"code"`
 }
 
 type account struct {
@@ -53,6 +54,7 @@ type account struct {
 var (
 	ErrMempoolIsFull    = errors.New("mempool is full")
 	ErrTooManyOpenFiles = errors.New("too many open files")
+	ErrSequenceWrong    = errors.New("wrong sequence")
 )
 
 func queryAccount(address, nodeUrl string) *account {
@@ -95,6 +97,7 @@ func broadcastTx(tx string, nodeUrl, mode string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	//log.Println(resp.StatusCode, string(respBody))
 	if resp.StatusCode == http.StatusInternalServerError &&
 		strings.Contains(string(respBody), `mempool is full`) {
 		return "", ErrMempoolIsFull
@@ -112,6 +115,16 @@ func broadcastTx(tx string, nodeUrl, mode string) (string, error) {
 	var res broadcastResponse
 	if err = json.Unmarshal(respBody, &res); err != nil {
 		log.Fatalln(err)
+	}
+	if res.Code > 0 {
+		if res.Code == 20 {
+			return "", ErrMempoolIsFull
+		}
+		if res.Code == 4 {
+			return "", ErrSequenceWrong
+		}
+		log.Println(resp.StatusCode, string(respBody))
+		return "", errors.New("broadcastTx error")
 	}
 	return res.Txhash, nil
 }

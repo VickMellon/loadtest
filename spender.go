@@ -34,7 +34,7 @@ func spender(wg *sync.WaitGroup, from *wallet, workset []*wallet, amount uint64,
 	var to *wallet
 	var tx string
 	var err error
-	log.Println("All Txs for wallet", from.address, " will be sent to node:", nodeUrl)
+	//log.Println("All Txs for wallet", from.address, " will be sent to node:", nodeUrl)
 	retryInt := 10 * time.Millisecond
 	l := len(workset)
 	for {
@@ -70,20 +70,31 @@ func spender(wg *sync.WaitGroup, from *wallet, workset []*wallet, amount uint64,
 		}
 		p.s.Unlock()
 
-		_, err = broadcastTx(tx, nodeUrl, "async")
-		for err == ErrMempoolIsFull || err == ErrTooManyOpenFiles {
-			// wait & retry
-			time.Sleep(retryInt)
-			if retryInt < 100*time.Millisecond {
-				retryInt *= 2 // progressive pause, but not longer 100ms
+		_, err = broadcastTx(tx, nodeUrl, "sync")
+		seqRetries := 10
+		for err == ErrMempoolIsFull || err == ErrTooManyOpenFiles || (err == ErrSequenceWrong && seqRetries > 0) {
+			// try to fix sequence
+			if err == ErrSequenceWrong {
+				from.s.Lock()
+				from.sequence--
+				tx = getSignedSendTx(from.address, to.address, amount, "", from.privKey, chainId, from.accountNumber, from.sequence)
+				from.s.Unlock()
+				seqRetries--
+				time.Sleep(2 * time.Millisecond)
+			} else {
+				// wait & retry
+				time.Sleep(retryInt)
+				if retryInt < 100*time.Millisecond {
+					retryInt *= 2 // progressive pause, but not longer 100ms
+				}
 			}
-			_, err = broadcastTx(tx, nodeUrl, "async")
+			_, err = broadcastTx(tx, nodeUrl, "sync")
 		}
 		retryInt = 10 * time.Millisecond // reset progressive pause
 		if err != nil {
-			log.Println("broadcast FAIL, with sequence:", from.sequence, " tx:", tx, " err:", err)
+			log.Println("broadcast FAIL for", from.address, ", with sequence:", from.sequence, ", err:", err)
 			time.Sleep(time.Second)
-			continue
+			return
 		}
 		// calc balances
 		from.s.Lock()
