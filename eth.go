@@ -151,7 +151,7 @@ func parseInstanceError(err error) error {
 		return nil
 	}
 	s := err.Error()
-	log.Println(s)
+	//log.Println(s)
 	if strings.Contains(s, "-32000") {
 		return ErrMempoolIsFull
 	}
