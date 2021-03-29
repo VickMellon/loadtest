@@ -76,7 +76,8 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 				return
 			}
 		} else if nextCall == 2 {
-			_, err = instance.AddValue(auth, amount)
+			idx := big.NewInt(rand.Int63n(32768)) // total array length up to 32K
+			_, err = instance.SetArrayValue(auth, idx, amount)
 			if pErr := parseInstanceError(err); pErr == ErrMempoolIsFull || pErr == ErrTooManyOpenFiles || pErr == ErrEOF {
 				// wait & retry
 				//log.Println(from.address[:8], "retry after:", retryInt.String())
@@ -113,7 +114,7 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 		if p.CalcTx() {
 			return
 		}
-		// current delay
+		// delay consider previous request duration
 		if p.delayUpTo > 0 {
 			timePassed := time.Now().Sub(requestAt)
 			if timePassed < p.delayUpTo {
@@ -150,6 +151,7 @@ func parseInstanceError(err error) error {
 		return nil
 	}
 	s := err.Error()
+	log.Println(s)
 	if strings.Contains(s, "-32000") {
 		return ErrMempoolIsFull
 	}
