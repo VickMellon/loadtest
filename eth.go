@@ -48,6 +48,7 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 		p.s.Unlock()
 		// call SC method
 		amount := big.NewInt(rand.Int63())
+		requestAt := time.Now()
 		if nextCall == 1 {
 			_, err = instance.SetNumberValue(auth, amount)
 			if pErr := parseInstanceError(err); pErr == ErrMempoolIsFull || pErr == ErrTooManyOpenFiles || pErr == ErrEOF {
@@ -114,7 +115,10 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 		}
 		// current delay
 		if p.delayUpTo > 0 {
-			time.Sleep(p.delayUpTo)
+			timePassed := time.Now().Sub(requestAt)
+			if timePassed < p.delayUpTo {
+				time.Sleep(p.delayUpTo - timePassed)
+			}
 		}
 		// default minimal delay to prevent flooding of mempool with too fast requests
 		time.Sleep(2 * time.Millisecond)
