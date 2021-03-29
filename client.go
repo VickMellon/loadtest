@@ -55,6 +55,7 @@ var (
 	ErrMempoolIsFull    = errors.New("mempool is full")
 	ErrTooManyOpenFiles = errors.New("too many open files")
 	ErrSequenceWrong    = errors.New("wrong sequence")
+	ErrEOF              = errors.New("EOF")
 )
 
 func queryAccount(address, nodeUrl string) *account {

@@ -4,6 +4,7 @@ import (
 	"flag"
 	"log"
 	"math/rand"
+	"os"
 	"sync"
 	"time"
 )
@@ -31,6 +32,7 @@ func init() {
 	flag.StringVar(&nodes, `nodes`, ``, `List of REST servers, comma separated (default "http://localhost:8545")`)
 	flag.Parse()
 	rand.Seed(time.Now().UTC().UnixNano())
+	log.SetOutput(os.Stdout)
 }
 
 func main() {

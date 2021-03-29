@@ -50,7 +50,7 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 		amount := big.NewInt(rand.Int63())
 		if nextCall == 1 {
 			_, err = instance.SetNumberValue(auth, amount)
-			if pErr := parseInstanceError(err); pErr == ErrMempoolIsFull || pErr == ErrTooManyOpenFiles {
+			if pErr := parseInstanceError(err); pErr == ErrMempoolIsFull || pErr == ErrTooManyOpenFiles || pErr == ErrEOF {
 				// wait & retry
 				//log.Println(from.address[:8], "retry after:", retryInt.String())
 				time.Sleep(retryInt)
@@ -76,7 +76,7 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 			}
 		} else if nextCall == 2 {
 			_, err = instance.AddValue(auth, amount)
-			if pErr := parseInstanceError(err); pErr == ErrMempoolIsFull || pErr == ErrTooManyOpenFiles {
+			if pErr := parseInstanceError(err); pErr == ErrMempoolIsFull || pErr == ErrTooManyOpenFiles || pErr == ErrEOF {
 				// wait & retry
 				//log.Println(from.address[:8], "retry after:", retryInt.String())
 				time.Sleep(retryInt)
@@ -151,6 +151,9 @@ func parseInstanceError(err error) error {
 	}
 	if strings.Contains(s, "too many open files") {
 		return ErrTooManyOpenFiles
+	}
+	if strings.Contains(s, "EOF") {
+		return ErrEOF
 	}
 	return err
 }
