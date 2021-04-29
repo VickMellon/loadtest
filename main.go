@@ -65,7 +65,7 @@ func main() {
 		//log.Println("[", w.address, "] ", w.balance)
 	}
 	var txCost uint64
-	if m > 0 {
+	if m > 0 && m < 4 {
 		txCost = gasWanted * gasPrice
 	} else {
 		txCost = sendAmount + feesAmount
@@ -81,10 +81,12 @@ func main() {
 	}
 	// Go!
 	for i := 0; i < int(c); i++ {
-		if m > 0 {
+		if m >= 1 && m <= 3 {
 			go sc_caller(wg, s.workset[i], s.instances[i%len(s.nodes)], pr, m)
+		} else if m >= 4 {
+			go rapidIntakeSpender(wg, s.workset[i], s.sc_address, m, s.nodes[i%len(s.nodes)], s.chainId, pr)
 		} else {
-			go spender(wg, s.workset[i], s.workset, sendAmount, s.nodes[i%len(s.nodes)], s.chainId, pr)
+			go sendTxSpender(wg, s.workset[i], s.workset, sendAmount, s.nodes[i%len(s.nodes)], s.chainId, pr)
 		}
 		wg.Add(1)
 	}
