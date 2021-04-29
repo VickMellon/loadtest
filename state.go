@@ -1,14 +1,22 @@
 package main
 
 import (
+	"crypto/ecdsa"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/tendermint/tendermint/crypto/secp256k1"
+	"github.com/VickMellon/loadtest/MiniStore"
+	"github.com/cosmos/ethermint/crypto/ethsecp256k1"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"io/ioutil"
 	"log"
+	"math/big"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -19,33 +27,41 @@ const (
 )
 
 type state struct {
-	chainId string
-	nodes   []string
-	wallets []*wallet
-	workset []*wallet // specified part of all wallets for current run
+	chainId    string
+	chainIdN   int64
+	nodes      []string
+	instances  []*MiniStore.MiniStore //according to nodes
+	sc_address common.Address
+	wallets    []*wallet
+	workset    []*wallet // specified part of all wallets for current run
 }
 
 type wallet struct {
-	privKey       secp256k1.PrivKeySecp256k1
-	pubKey        secp256k1.PubKeySecp256k1
+	privKey       ethsecp256k1.PrivKey
+	privKeyE      *ecdsa.PrivateKey
+	pubKey        ethsecp256k1.PubKey
+	pubKeyE       *ecdsa.PublicKey
 	name          string // contract: also used as password
 	address       string // bech32
 	balance       uint64 // uatolo
 	accountNumber uint64
 	sequence      uint64
+	auth          *bind.TransactOpts
 	s             sync.Mutex // for async access
 }
 
 type storageState struct {
-	ChainId string          `json:"chain_id"`
-	Nodes   []string        `json:"nodes"`
-	Wallets []storageWallet `json:"wallets"`
+	ChainId   string          `json:"chain_id"`
+	Nodes     []string        `json:"nodes"`
+	SCAddress string          `json:"sc_address"`
+	Wallets   []storageWallet `json:"wallets"`
 }
 
 type storageWallet struct {
-	Name    string `json:"name"` // contract: also used as password
-	Address string `json:"address"`
-	Pk      string `json:"pk"` // base64 encoded
+	Name       string `json:"name"` // contract: also used as password
+	Address    string `json:"address"`
+	EthAddress string `json:"eth_address"`
+	Pk         string `json:"pk"` // base64 encoded
 }
 
 func loadState() (s *state) {
@@ -63,6 +79,9 @@ func loadState() (s *state) {
 	}
 	s.chainId = ss.ChainId
 	s.nodes = ss.Nodes
+	if len(ss.SCAddress) == 42 {
+		s.sc_address = common.HexToAddress(ss.SCAddress)
+	}
 	s.wallets = make([]*wallet, 0, len(ss.Wallets))
 	for _, sw := range ss.Wallets {
 		w := &wallet{
@@ -77,11 +96,18 @@ func loadState() (s *state) {
 			log.Println("Invalid private key len", err)
 			continue
 		}
-		w.privKey = secp256k1.PrivKeySecp256k1{}
-		copy(w.privKey[:], pk)
+		w.privKey = pk
+		if w.privKeyE, err = crypto.ToECDSA(pk); err != nil {
+			log.Println("Can't ToECDSA private key", err)
+			continue
+		}
 
-		if w.pubKey, ok = w.privKey.PubKey().(secp256k1.PubKeySecp256k1); !ok {
-			log.Println("pubKey is not secp256k1.PubKeySecp256k1")
+		if w.pubKey, ok = w.privKey.PubKey().(ethsecp256k1.PubKey); !ok {
+			log.Println("pubKey is not ethsecp256k1.PubKey")
+			continue
+		}
+		if w.pubKeyE, ok = w.privKeyE.Public().(*ecdsa.PublicKey); !ok {
+			log.Println("cannot assert type: publicKey is not of type *ecdsa.PublicKey")
 			continue
 		}
 		w.address, err = addressFromPubKey(w.pubKey)
@@ -96,12 +122,20 @@ func loadState() (s *state) {
 
 func (s *state) checkConfig(chainId string, nodes string) {
 	var isUpdated bool
+	var err error
 	if chainId != "" {
 		s.chainId = chainId
 		isUpdated = true
 	}
 	if s.chainId == "" {
 		log.Fatalln("chainId is empty, please, specify --chain parameter")
+	}
+	chainIdParts := strings.Split(s.chainId, "-")
+	if len(chainIdParts) != 2 {
+		log.Fatalln("chainId is invalid, valid value: <abc-123>")
+	}
+	if s.chainIdN, err = strconv.ParseInt(chainIdParts[1], 10, 64); err != nil {
+		log.Fatalln("cant parse chainId number part")
 	}
 	if nodes != "" {
 		s.nodes = strings.Split(nodes, `,`)
@@ -127,11 +161,18 @@ func (s *state) checkConfig(chainId string, nodes string) {
 
 func (s *state) newWallet(name string) {
 	pk := newPrivKey()
-	pb, _ := pk.PubKey().(secp256k1.PubKeySecp256k1)
+	pke, err := crypto.ToECDSA(pk)
+	if err != nil {
+		log.Fatalln("Can't ToECDSA new private key", err, len(pk.Bytes()))
+	}
+	pb, _ := pk.PubKey().(ethsecp256k1.PubKey)
+	pbe, _ := pke.Public().(*ecdsa.PublicKey)
 	addr, _ := addressFromPubKey(pb)
 	s.wallets = append(s.wallets, &wallet{
 		privKey:       pk,
+		privKeyE:      pke,
 		pubKey:        pb,
+		pubKeyE:       pbe,
 		name:          name,
 		address:       addr,
 		balance:       0,
@@ -142,15 +183,17 @@ func (s *state) newWallet(name string) {
 
 func (s *state) saveState() {
 	ss := storageState{
-		ChainId: s.chainId,
-		Nodes:   s.nodes,
-		Wallets: make([]storageWallet, 0, len(s.wallets)),
+		ChainId:   s.chainId,
+		Nodes:     s.nodes,
+		SCAddress: s.sc_address.String(),
+		Wallets:   make([]storageWallet, 0, len(s.wallets)),
 	}
 	for _, w := range s.wallets {
 		ss.Wallets = append(ss.Wallets, storageWallet{
-			Name:    w.name,
-			Address: w.address,
-			Pk:      base64.StdEncoding.EncodeToString(w.privKey[:]),
+			Name:       w.name,
+			Address:    w.address,
+			EthAddress: crypto.PubkeyToAddress(*w.pubKeyE).String(),
+			Pk:         base64.StdEncoding.EncodeToString(w.privKey[:]),
 		})
 	}
 	stateFile, err := os.Create(stateFileName)
@@ -217,11 +260,11 @@ func (s *state) equalizeBalances() {
 		if amount > 0 {
 			tx := getSignedSendTx(s.wallets[i].address, bank.address, amount,
 				"equalizeBalances", s.wallets[i].privKey, s.chainId, s.wallets[i].accountNumber, s.wallets[i].sequence)
-			_, err := broadcastTx(tx, s.nodes[0], "async")
+			_, err := broadcastTx(tx, s.nodes[0], "sync")
 			for err == ErrMempoolIsFull {
 				// wait & retry
 				time.Sleep(100 * time.Millisecond)
-				_, err = broadcastTx(tx, s.nodes[0], "async")
+				_, err = broadcastTx(tx, s.nodes[0], "sync")
 			}
 			if err != nil {
 				log.Fatalln("equalizeBalances failed,", err)
@@ -240,11 +283,11 @@ func (s *state) equalizeBalances() {
 			dif := each - s.workset[i].balance
 			tx := getSignedSendTx(bank.address, s.workset[i].address, dif,
 				"equalizeBalances", bank.privKey, s.chainId, bank.accountNumber, bank.sequence)
-			_, err := broadcastTx(tx, s.nodes[0], "async")
+			_, err := broadcastTx(tx, s.nodes[0], "sync")
 			for err == ErrMempoolIsFull {
 				// wait & retry
 				time.Sleep(100 * time.Millisecond)
-				_, err = broadcastTx(tx, s.nodes[0], "async")
+				_, err = broadcastTx(tx, s.nodes[0], "sync")
 			}
 			if err != nil {
 				log.Fatalln("equalizeBalances failed,", err)
@@ -294,4 +337,76 @@ func updateW(wallets []*wallet, baseUrl string) {
 		time.Sleep(2 * time.Millisecond) // to keep friendly rps rate
 	}
 	wg.Wait()
+}
+
+func (s *state) initInstances() {
+	s.instances = make([]*MiniStore.MiniStore, len(s.nodes))
+	for i, n := range s.nodes {
+		client, err := ethclient.Dial(n)
+		if err != nil {
+			log.Fatalln("failed to create ethclient")
+		}
+		instance, err := MiniStore.NewMiniStore(s.sc_address, client)
+		if err != nil {
+			log.Fatalln("failed to create MiniStore instance")
+		}
+		s.instances[i] = instance
+	}
+}
+
+func (s *state) initAuth() {
+	var err error
+	chainId := big.NewInt(s.chainIdN)
+	for _, w := range s.workset {
+		w.auth, err = bind.NewKeyedTransactorWithChainID(w.privKeyE, chainId)
+		if err != nil {
+			log.Fatalln("failed to create auth")
+		}
+		fromAddress := crypto.PubkeyToAddress(*w.pubKeyE)
+		w.auth.From = fromAddress
+		w.auth.Nonce = big.NewInt(int64(w.sequence)) // ?
+		w.auth.Value = big.NewInt(0)                 // in wei
+		w.auth.GasPrice = big.NewInt(int64(gasPrice))
+	}
+}
+
+func (s *state) deploySC() {
+	var err error
+	// check SC on current address
+	instance := s.instances[0]
+	// try to call SC
+	_, err = instance.GetNumberValue(nil)
+	if err != nil {
+		// try again
+		time.Sleep(time.Second)
+		_, err = instance.GetNumberValue(nil)
+	}
+	if err != nil {
+		log.Printf("Smart-contract was not found on address: %s, err: %v\n", s.sc_address.String(), err)
+		// no SC at given newAddress, let deploy a new one, from first wallet
+		client, err := ethclient.Dial(s.nodes[0])
+		if err != nil {
+			log.Fatalln("failed to create ethclient")
+		}
+		w := s.workset[0]
+		w.s.Lock()
+		defer w.s.Unlock()
+		auth := w.auth
+		auth.GasLimit = 500000
+		auth.Nonce = big.NewInt(int64(w.sequence))
+		newAddress, _, _, err := MiniStore.DeployMiniStore(auth, client)
+		if err != nil {
+			log.Fatal(err)
+		}
+		w.sequence++
+		w.balance -= auth.GasLimit * auth.GasPrice.Uint64()
+		s.sc_address = newAddress
+		s.saveState()
+		log.Printf("Smart-contract was deployed on address: %s\n", newAddress.String())
+		s.initInstances() // recreate instances with new SC address
+		log.Println("waiting 10s for sure commit after deployment")
+		time.Sleep(time.Second * 10)
+	} else {
+		log.Printf("Smart-contract already existed on address: %s\n", s.sc_address.String())
+	}
 }
