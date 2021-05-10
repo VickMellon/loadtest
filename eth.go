@@ -61,13 +61,6 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 				continue
 			} else if seq := parseSequenceError(err); seq > 0 {
 				// fix failed sequence & retry
-				//if from.sequence > seq {
-				//	time.Sleep(retryInt)
-				//	if retryInt < 100*time.Millisecond {
-				//		retryInt *= 2 // progressive pause, but not longer 1s
-				//	}
-				//	continue
-				//}
 				log.Println(from.address[:8], "fix sequence:", from.sequence, " to ", seq)
 				from.sequence = seq
 				continue
@@ -88,13 +81,6 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 				continue
 			} else if seq := parseSequenceError(err); seq > 0 {
 				// fix failed sequence & retry
-				//if from.sequence > seq {
-				//	time.Sleep(retryInt)
-				//	if retryInt < 100*time.Millisecond {
-				//		retryInt *= 2 // progressive pause, but not longer 1s
-				//	}
-				//	continue
-				//}
 				log.Println(from.address[:8], "fix sequence:", from.sequence, " to ", seq)
 				from.sequence = seq
 				continue

@@ -23,7 +23,7 @@ type config struct {
 func init() {
 	flag.Uint64Var(&c, `c`, 1, `Concurrency, number of async threads with requests`)
 	flag.Uint64Var(&n, `n`, 0, `Number of transactions to broadcast, 0 - unlimited`)
-	flag.Uint64Var(&m, `m`, 0, `Mode: 0 - send Txs, 1 - call SetNumberValue, 2 - call AddValue, 3 - call both SetNumberValue and AddValue`)
+	flag.Uint64Var(&m, `m`, 0, `Mode: 0 - send Txs, 1 - call SetNumberValue, 2 - call AddValue, 3 - call both SetNumberValue and AddValue, 4 - setValue Txs, 5 - setArrayValue Txs, 6 - both setValue and setArrayValue Txs`)
 	flag.DurationVar(&t, `t`, 0, `Test duration, 0 - unlimited`)
 	flag.DurationVar(&p, `p`, 0, `Random delays, up to value`)
 	flag.BoolVar(&l, `l`, false, `Logging mode, not interactive`)
@@ -72,13 +72,7 @@ func main() {
 	}
 	log.Println("Initial total balance -", totalStartBalance, ", avg -", int(totalStartBalance)/len(s.workset),
 		", estimated Txs -", totalStartBalance/uint64(len(s.workset))/(txCost)*uint64(len(s.workset)))
-	if m > 1 {
-		var err error
-		if pr.valuesCount, err = getValuesCount(s.instances[0]); err != nil {
-			log.Fatalln("Can't get initial SC array values count:", err)
-		}
-		log.Println("Initial SC array values count:", pr.valuesCount)
-	}
+
 	// Go!
 	for i := 0; i < int(c); i++ {
 		if m >= 1 && m <= 3 {
@@ -113,17 +107,4 @@ func main() {
 	}
 	log.Println("Final total balance -", totalFinishBalance, ", avg -", int(totalFinishBalance)/len(s.workset),
 		", estimated Txs -", totalFinishBalance/uint64(len(s.workset))/(txCost)*uint64(len(s.workset)))
-	if m > 1 {
-		log.Println("Checking final SC array values count...")
-		actual, err := getValuesCount(s.instances[0])
-		if err != nil {
-			log.Fatalln("Can't get final SC array values count:", err)
-		}
-		if actual == pr.valuesCount {
-			log.Println("MATCHED")
-			log.Println("Final SC array values count:", pr.valuesCount)
-		} else {
-			log.Println("FAIL! expected final SC array values count not equal to actual: ", pr.valuesCount, "!=", actual)
-		}
-	}
 }

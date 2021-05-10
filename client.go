@@ -30,8 +30,8 @@ type accountResponse struct {
 				Denom  string `json:"denom"`
 				Amount string `json:"amount"`
 			} `json:"coins"`
-			AccountNumber uint64 `json:"account_number"`
-			Sequence      uint64 `json:"sequence"`
+			AccountNumber interface{} `json:"account_number"`
+			Sequence      interface{} `json:"sequence"`
 		} `json:"value"`
 	} `json:"result"`
 }
@@ -77,12 +77,26 @@ func queryAccount(address, nodeUrl string) *account {
 	if res.Result.Value.Address != address || len(res.Result.Value.Coins) == 0 {
 		return nil
 	}
+	var accountNumber uint64
+	if s, ok := res.Result.Value.AccountNumber.(string); ok {
+		v, _ := strconv.ParseInt(s, 10, 64)
+		accountNumber = uint64(v)
+	} else if v, ok := res.Result.Value.AccountNumber.(float64); ok {
+		accountNumber = uint64(v)
+	}
+	var sequence uint64
+	if s, ok := res.Result.Value.Sequence.(string); ok {
+		v, _ := strconv.ParseInt(s, 10, 64)
+		sequence = uint64(v)
+	} else if v, ok := res.Result.Value.Sequence.(float64); ok {
+		sequence = uint64(v)
+	}
 	bal, err := strconv.ParseInt(res.Result.Value.Coins[0].Amount, 10, 64)
 	return &account{
 		address:       address,
 		balance:       uint64(bal),
-		accountNumber: res.Result.Value.AccountNumber,
-		sequence:      res.Result.Value.Sequence,
+		accountNumber: accountNumber,
+		sequence:      sequence,
 	}
 }
 
