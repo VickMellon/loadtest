@@ -14,15 +14,16 @@ import (
 )
 
 const (
-	gasPrice  = uint64(1)
-	gasWanted = uint64(50000)
+	gasPrice              = uint64(1)
+	gasWanted             = uint64(50000)
+	gasWantedPerArrayItem = uint64(7000)
 )
 
 var (
 	parseSeq = regexp.MustCompile(`[0-9]+`)
 )
 
-func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, p *process, mode uint64) {
+func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, p *process, mode, i uint64) {
 	var err error
 	defer wg.Done()
 	nextCall := mode
@@ -47,9 +48,9 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 		}
 		p.s.Unlock()
 		// call SC method
-		amount := big.NewInt(rand.Int63())
 		requestAt := time.Now()
 		if nextCall == 1 {
+			amount := big.NewInt(rand.Int63())
 			_, err = instance.SetNumberValue(auth, amount)
 			if err = parseInstanceError(err); err == ErrMempoolIsFull || err == ErrTooManyOpenFiles {
 				// wait & retry
@@ -69,8 +70,13 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 				return
 			}
 		} else if nextCall == 2 {
+			auth.GasLimit = gasWanted + gasWantedPerArrayItem*ic
 			idx := big.NewInt(rand.Int63n(32768)) // total array length up to 32K
-			_, err = instance.SetArrayValue(auth, idx, amount)
+			amounts := make([]*big.Int, ic)
+			for i := range amounts {
+				amounts[i] = big.NewInt(rand.Int63())
+			}
+			_, err = instance.InsertArray(auth, idx, amounts)
 			if err = parseInstanceError(err); err == ErrMempoolIsFull || err == ErrTooManyOpenFiles {
 				// wait & retry
 				//log.Println(from.address[:8], "retry after:", retryInt.String())

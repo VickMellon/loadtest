@@ -119,7 +119,7 @@ func sendTxSpender(wg *sync.WaitGroup, from *wallet, workset []*wallet, amount u
 	}
 }
 
-func rapidIntakeSpender(wg *sync.WaitGroup, from *wallet, sc common.Address, mode uint64, nodeUrl string, chainId string, p *process) {
+func rapidIntakeSpender(wg *sync.WaitGroup, from *wallet, sc common.Address, mode, ic uint64, nodeUrl string, chainId string, p *process) {
 	defer wg.Done()
 	var tx string
 	var err error
@@ -132,6 +132,10 @@ func rapidIntakeSpender(wg *sync.WaitGroup, from *wallet, sc common.Address, mod
 	}
 	for {
 		value := common.BigToHash(big.NewInt(rand.Int63()))
+		values := make([]common.Hash, ic)
+		for i := range values {
+			values[i] = common.BigToHash(big.NewInt(rand.Int63()))
+		}
 		idx := common.BigToHash(big.NewInt(rand.Int63n(32768))) // total array length up to 32K
 		// check source balance
 		from.s.Lock()
@@ -144,7 +148,7 @@ func rapidIntakeSpender(wg *sync.WaitGroup, from *wallet, sc common.Address, mod
 		case 4:
 			tx = getSignedSetValueTx(from.address, sc, singleSlot, value, "", from.privKey, chainId, from.accountNumber, from.sequence)
 		case 5:
-			tx = getSignedSetArrayValueTx(from.address, sc, arraySlot, idx, value, "", from.privKey, chainId, from.accountNumber, from.sequence)
+			tx = getSignedSetArrayValuesTx(from.address, sc, arraySlot, idx, values, "", from.privKey, chainId, from.accountNumber, from.sequence)
 		}
 		from.s.Unlock()
 		// check again right before broadcast to prevent excess Txs
@@ -166,7 +170,7 @@ func rapidIntakeSpender(wg *sync.WaitGroup, from *wallet, sc common.Address, mod
 				case 4:
 					tx = getSignedSetValueTx(from.address, sc, singleSlot, value, "", from.privKey, chainId, from.accountNumber, from.sequence)
 				case 5:
-					tx = getSignedSetArrayValueTx(from.address, sc, arraySlot, idx, value, "", from.privKey, chainId, from.accountNumber, from.sequence)
+					tx = getSignedSetArrayValuesTx(from.address, sc, arraySlot, idx, values, "", from.privKey, chainId, from.accountNumber, from.sequence)
 				}
 				from.s.Unlock()
 				seqRetries--

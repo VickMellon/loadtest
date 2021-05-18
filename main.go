@@ -10,11 +10,11 @@ import (
 )
 
 var (
-	c, n, m uint64
-	t, p    time.Duration
-	l       bool
-	nodes   string
-	chainId string
+	c, n, m, ic uint64
+	t, p        time.Duration
+	l           bool
+	nodes       string
+	chainId     string
 )
 
 type config struct {
@@ -23,7 +23,8 @@ type config struct {
 func init() {
 	flag.Uint64Var(&c, `c`, 1, `Concurrency, number of async threads with requests`)
 	flag.Uint64Var(&n, `n`, 0, `Number of transactions to broadcast, 0 - unlimited`)
-	flag.Uint64Var(&m, `m`, 0, `Mode: 0 - send Txs, 1 - call SetNumberValue, 2 - call AddValue, 3 - call both SetNumberValue and AddValue, 4 - setValue Txs, 5 - setArrayValue Txs, 6 - both setValue and setArrayValue Txs`)
+	flag.Uint64Var(&m, `m`, 0, `Mode: 0 - send Txs, 1 - call SetNumberValue, 2 - call InsertArray, 3 - call both SetNumberValue and InsertArray, 4 - setValue Txs, 5 - setArrayValues Txs, 6 - both setValue and setArrayValues Txs`)
+	flag.Uint64Var(&ic, `i`, 1, `Items count: for m=2/3 - number of values for InsertArray call, for m=5/6 - number of values for setArrayValues Tx`)
 	flag.DurationVar(&t, `t`, 0, `Test duration, 0 - unlimited`)
 	flag.DurationVar(&p, `p`, 0, `Random delays, up to value`)
 	flag.BoolVar(&l, `l`, false, `Logging mode, not interactive`)
@@ -76,9 +77,9 @@ func main() {
 	// Go!
 	for i := 0; i < int(c); i++ {
 		if m >= 1 && m <= 3 {
-			go sc_caller(wg, s.workset[i], s.instances[i%len(s.nodes)], pr, m)
+			go sc_caller(wg, s.workset[i], s.instances[i%len(s.nodes)], pr, m, ic)
 		} else if m >= 4 {
-			go rapidIntakeSpender(wg, s.workset[i], s.sc_address, m, s.nodes[i%len(s.nodes)], s.chainId, pr)
+			go rapidIntakeSpender(wg, s.workset[i], s.sc_address, m, ic, s.nodes[i%len(s.nodes)], s.chainId, pr)
 		} else {
 			go sendTxSpender(wg, s.workset[i], s.workset, sendAmount, s.nodes[i%len(s.nodes)], s.chainId, pr)
 		}
