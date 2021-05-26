@@ -23,13 +23,9 @@ var (
 	parseSeq = regexp.MustCompile(`[0-9]+`)
 )
 
-func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, p *process, mode, i uint64) {
+func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, p *process, ic uint64) {
 	var err error
 	defer wg.Done()
-	nextCall := mode
-	if mode == 3 {
-		nextCall = 1
-	}
 	retryInt := 10 * time.Millisecond
 	for {
 		// check source balance
@@ -49,57 +45,34 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 		p.s.Unlock()
 		// call SC method
 		requestAt := time.Now()
-		if nextCall == 1 {
-			amount := big.NewInt(rand.Int63())
-			_, err = instance.SetNumberValue(auth, amount)
-			if err = parseInstanceError(err); err == ErrMempoolIsFull || err == ErrTooManyOpenFiles {
-				// wait & retry
-				//log.Println(from.address[:8], "retry after:", retryInt.String())
-				time.Sleep(retryInt)
-				if retryInt < 100*time.Millisecond {
-					retryInt *= 2 // progressive pause, but not longer 1s
-				}
-				continue
-			} else if seq := parseSequenceError(err); seq > 0 {
-				// fix failed sequence & retry
-				log.Println(from.address[:8], "fix sequence:", from.sequence, " to ", seq)
-				from.sequence = seq
-				continue
-			} else if err != nil {
-				log.Println("call SetNumberValue() FAIL, with sequence:", from.sequence, " err:", err)
-				return
-			}
-		} else if nextCall == 2 {
-			auth.GasLimit = gasWanted + gasWantedPerArrayItem*ic
-			idx := big.NewInt(rand.Int63n(32768)) // total array length up to 32K
-			amounts := make([]*big.Int, ic)
-			for i := range amounts {
-				amounts[i] = big.NewInt(rand.Int63())
-			}
-			_, err = instance.InsertArray(auth, idx, amounts)
-			if err = parseInstanceError(err); err == ErrMempoolIsFull || err == ErrTooManyOpenFiles {
-				// wait & retry
-				//log.Println(from.address[:8], "retry after:", retryInt.String())
-				time.Sleep(retryInt)
-				if retryInt < 100*time.Millisecond {
-					retryInt *= 2 // progressive pause, but not longer 100ms
-				}
-				continue
-			} else if seq := parseSequenceError(err); seq > 0 {
-				// fix failed sequence & retry
-				log.Println(from.address[:8], "fix sequence:", from.sequence, " to ", seq)
-				from.sequence = seq
-				continue
-			} else if err != nil {
-				log.Println("call AddValue() FAIL, with sequence:", from.sequence, " err:", err)
-				return
-			}
-			p.s.Lock()
-			p.valuesCount++
-			p.s.Unlock()
-		} else {
-			log.Fatalln("invalid nextCall")
+		auth.GasLimit = gasWanted + gasWantedPerArrayItem*ic
+		idx := big.NewInt(rand.Int63n(32768)) // total array length up to 32K
+		amounts := make([]*big.Int, ic)
+		for i := range amounts {
+			amounts[i] = big.NewInt(rand.Int63())
 		}
+		_, err = instance.InsertArray(auth, idx, amounts)
+		if err = parseInstanceError(err); err == ErrMempoolIsFull || err == ErrTooManyOpenFiles {
+			// wait & retry
+			//log.Println(from.address[:8], "retry after:", retryInt.String())
+			time.Sleep(retryInt)
+			if retryInt < 100*time.Millisecond {
+				retryInt *= 2 // progressive pause, but not longer 100ms
+			}
+			continue
+		} else if seq := parseSequenceError(err); seq > 0 {
+			// fix failed sequence & retry
+			log.Println(from.address[:8], "fix sequence:", from.sequence, " to ", seq)
+			from.sequence = seq
+			continue
+		} else if err != nil {
+			log.Println("call InsertArray() FAIL, with sequence:", from.sequence, " err:", err)
+			return
+		}
+		p.s.Lock()
+		p.valuesCount++
+		p.s.Unlock()
+
 		from.balance -= gasWanted
 		from.sequence++
 		// check process state
@@ -116,16 +89,6 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 		// default minimal delay to prevent flooding of mempool with too fast requests
 		time.Sleep(2 * time.Millisecond)
 		// next call will be..
-		if mode == 3 {
-			// flip-flop calls
-			if nextCall == 1 {
-				nextCall = 2
-			} else {
-				nextCall = 1
-			}
-		} else {
-			nextCall = mode
-		}
 		retryInt = 10 * time.Millisecond
 	}
 }

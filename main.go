@@ -23,8 +23,8 @@ type config struct {
 func init() {
 	flag.Uint64Var(&c, `c`, 1, `Concurrency, number of async threads with requests`)
 	flag.Uint64Var(&n, `n`, 0, `Number of transactions to broadcast, 0 - unlimited`)
-	flag.Uint64Var(&m, `m`, 0, `Mode: 0 - send Txs, 1 - call SetNumberValue, 2 - call InsertArray, 3 - call both SetNumberValue and InsertArray, 4 - setValue Txs, 5 - setArrayValues Txs, 6 - both setValue and setArrayValues Txs`)
-	flag.Uint64Var(&ic, `i`, 1, `Items count: for m=2/3 - number of values for InsertArray call, for m=5/6 - number of values for setArrayValues Tx`)
+	flag.Uint64Var(&m, `m`, 0, `Mode: 0 - send Txs, 1 - call SC InsertArray(), 2 - setArrayValues Txs, 3 - setArrayValuesBulk Txs`)
+	flag.Uint64Var(&ic, `i`, 1, `Items count: for m=1 - number of values for InsertArray call, for m=2/3 - number of values for setArrayValues(Bulk) Txs`)
 	flag.DurationVar(&t, `t`, 0, `Test duration, 0 - unlimited`)
 	flag.DurationVar(&p, `p`, 0, `Random delays, up to value`)
 	flag.BoolVar(&l, `l`, false, `Logging mode, not interactive`)
@@ -58,7 +58,7 @@ func main() {
 	if t > 0 {
 		pr.mustStopAfter = pr.startedAt.Add(t)
 	}
-	var totalStartBalance, totalFinishBalance uint64
+	var totalStartBalance uint64
 	pr.startBalances = make([]uint64, len(s.workset))
 	for i, w := range s.workset {
 		pr.startBalances[i] = w.balance
@@ -66,7 +66,7 @@ func main() {
 		//log.Println("[", w.address, "] ", w.balance)
 	}
 	var txCost uint64
-	if m > 0 && m < 4 {
+	if m == 1 {
 		txCost = gasWanted * gasPrice
 	} else {
 		txCost = sendAmount + feesAmount
@@ -76,9 +76,9 @@ func main() {
 
 	// Go!
 	for i := 0; i < int(c); i++ {
-		if m >= 1 && m <= 3 {
-			go sc_caller(wg, s.workset[i], s.instances[i%len(s.nodes)], pr, m, ic)
-		} else if m >= 4 {
+		if m == 1 {
+			go sc_caller(wg, s.workset[i], s.instances[i%len(s.nodes)], pr, ic)
+		} else if m >= 2 {
 			go rapidIntakeSpender(wg, s.workset[i], s.sc_address, m, ic, s.nodes[i%len(s.nodes)], s.chainId, pr)
 		} else {
 			go sendTxSpender(wg, s.workset[i], s.workset, sendAmount, s.nodes[i%len(s.nodes)], s.chainId, pr)
@@ -86,26 +86,5 @@ func main() {
 		wg.Add(1)
 	}
 	wg.Wait()
-	log.Println("waiting 30s for sure commits")
-	time.Sleep(time.Second * 30)
-	pr.finishBalances = make([]uint64, len(s.workset))
-	for i, w := range s.workset {
-		pr.finishBalances[i] = w.balance
-		totalFinishBalance += w.balance
-	}
-	s.updateWorkset()
-	log.Println("Checking final balances...")
-	ok := true
-	for i, w := range s.workset {
-		if pr.finishBalances[i] != w.balance {
-			ok = false
-			log.Println("FAIL! expected final balance not equal to actual: [", w.address, "] ", pr.finishBalances[i], "!=", w.balance)
-		}
-		//log.Println("[", w.address, "] ", w.balance)
-	}
-	if ok {
-		log.Println("SUCCESS")
-	}
-	log.Println("Final total balance -", totalFinishBalance, ", avg -", int(totalFinishBalance)/len(s.workset),
-		", estimated Txs -", totalFinishBalance/uint64(len(s.workset))/(txCost)*uint64(len(s.workset)))
+	log.Println("DONE")
 }

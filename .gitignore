@@ -35,4 +35,4 @@ vagrant
 contract_tests/*
 
 loadtest
-loadtest_state.json
+*.json

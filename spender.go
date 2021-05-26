@@ -124,14 +124,8 @@ func rapidIntakeSpender(wg *sync.WaitGroup, from *wallet, sc common.Address, mod
 	var tx string
 	var err error
 	arraySlot := common.HexToHash("0x0")
-	singleSlot := common.HexToHash("0x1")
 	retryInt := 10 * time.Millisecond
-	nextCall := mode
-	if mode == 6 {
-		nextCall = 4
-	}
 	for {
-		value := common.BigToHash(big.NewInt(rand.Int63()))
 		values := make([]common.Hash, ic)
 		for i := range values {
 			values[i] = common.BigToHash(big.NewInt(rand.Int63()))
@@ -144,11 +138,11 @@ func rapidIntakeSpender(wg *sync.WaitGroup, from *wallet, sc common.Address, mod
 			from.s.Unlock()
 			return // source wallet out of tokens
 		}
-		switch nextCall {
-		case 4:
-			tx = getSignedSetValueTx(from.address, sc, singleSlot, value, "", from.privKey, chainId, from.accountNumber, from.sequence)
-		case 5:
-			tx = getSignedSetArrayValuesTx(from.address, sc, arraySlot, idx, values, "", from.privKey, chainId, from.accountNumber, from.sequence)
+		switch mode {
+		case 2:
+			tx = getSignedSetArrayValuesTx(from.address, sc, arraySlot, idx, values, false, from.privKey, chainId, from.accountNumber, from.sequence)
+		case 3:
+			tx = getSignedSetArrayValuesTx(from.address, sc, arraySlot, idx, values, true, from.privKey, chainId, from.accountNumber, from.sequence)
 		}
 		from.s.Unlock()
 		// check again right before broadcast to prevent excess Txs
@@ -166,11 +160,11 @@ func rapidIntakeSpender(wg *sync.WaitGroup, from *wallet, sc common.Address, mod
 			if err == ErrSequenceWrong {
 				from.s.Lock()
 				from.sequence--
-				switch nextCall {
-				case 4:
-					tx = getSignedSetValueTx(from.address, sc, singleSlot, value, "", from.privKey, chainId, from.accountNumber, from.sequence)
-				case 5:
-					tx = getSignedSetArrayValuesTx(from.address, sc, arraySlot, idx, values, "", from.privKey, chainId, from.accountNumber, from.sequence)
+				switch mode {
+				case 2:
+					tx = getSignedSetArrayValuesTx(from.address, sc, arraySlot, idx, values, false, from.privKey, chainId, from.accountNumber, from.sequence)
+				case 3:
+					tx = getSignedSetArrayValuesTx(from.address, sc, arraySlot, idx, values, true, from.privKey, chainId, from.accountNumber, from.sequence)
 				}
 				from.s.Unlock()
 				seqRetries--
@@ -205,17 +199,6 @@ func rapidIntakeSpender(wg *sync.WaitGroup, from *wallet, sc common.Address, mod
 		}
 		// default minimal delay to prevent flooding of mempool with too fast requests
 		time.Sleep(2 * time.Millisecond)
-		// next call will be..
-		if mode == 6 {
-			// flip-flop calls
-			if nextCall == 4 {
-				nextCall = 5
-			} else {
-				nextCall = 4
-			}
-		} else {
-			nextCall = mode
-		}
 	}
 }
 
