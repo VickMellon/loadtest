@@ -3,9 +3,11 @@ module github.com/VickMellon/loadtest
 go 1.15
 
 require (
-	github.com/cosmos/ethermint v0.4.1
-	github.com/ethereum/go-ethereum v1.9.25
+	github.com/cosmos/cosmos-sdk v0.43.0-rc2
+	github.com/ethereum/go-ethereum v1.10.3
 	github.com/pkg/errors v0.9.1
-	github.com/tendermint/tendermint v0.33.9
-	golang.org/x/crypto v0.0.0-20200728195943-123391ffb6de // indirect
+	github.com/tharsis/ethermint v0.4.2-0.20210729174059-c4aa8fafab13
+
 )
+
+replace github.com/gogo/protobuf => github.com/regen-network/protobuf v1.3.3-alpha.regen.1

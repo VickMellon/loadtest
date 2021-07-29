@@ -6,11 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/VickMellon/loadtest/MiniStore"
-	"github.com/cosmos/ethermint/crypto/ethsecp256k1"
+	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/tharsis/ethermint/crypto/ethsecp256k1"
 	"io/ioutil"
 	"log"
 	"math/big"
@@ -37,9 +38,9 @@ type state struct {
 }
 
 type wallet struct {
-	privKey       ethsecp256k1.PrivKey
+	privKey       *ethsecp256k1.PrivKey
 	privKeyE      *ecdsa.PrivateKey
-	pubKey        ethsecp256k1.PubKey
+	pubKey        cryptotypes.PubKey
 	pubKeyE       *ecdsa.PublicKey
 	name          string // contract: also used as password
 	address       string // bech32
@@ -96,16 +97,13 @@ func loadState() (s *state) {
 			log.Println("Invalid private key len", err)
 			continue
 		}
-		w.privKey = pk
+		w.privKey = &ethsecp256k1.PrivKey{Key: pk}
 		if w.privKeyE, err = crypto.ToECDSA(pk); err != nil {
 			log.Println("Can't ToECDSA private key", err)
 			continue
 		}
 
-		if w.pubKey, ok = w.privKey.PubKey().(ethsecp256k1.PubKey); !ok {
-			log.Println("pubKey is not ethsecp256k1.PubKey")
-			continue
-		}
+		w.pubKey = w.privKey.PubKey()
 		if w.pubKeyE, ok = w.privKeyE.Public().(*ecdsa.PublicKey); !ok {
 			log.Println("cannot assert type: publicKey is not of type *ecdsa.PublicKey")
 			continue
@@ -150,8 +148,6 @@ func (s *state) checkConfig(chainId string, nodes string) {
 			log.Fatalln("node URL is invalid")
 		} else if u.Scheme == "" {
 			log.Fatalln("node URL is invalid, scheme required")
-		} else if u.Port() == "" {
-			log.Fatalln("node URL is invalid, port required")
 		}
 	}
 	if isUpdated {
@@ -161,11 +157,11 @@ func (s *state) checkConfig(chainId string, nodes string) {
 
 func (s *state) newWallet(name string) {
 	pk := newPrivKey()
-	pke, err := crypto.ToECDSA(pk)
+	pke, err := crypto.ToECDSA(pk.Key)
 	if err != nil {
 		log.Fatalln("Can't ToECDSA new private key", err, len(pk.Bytes()))
 	}
-	pb, _ := pk.PubKey().(ethsecp256k1.PubKey)
+	pb := pk.PubKey()
 	pbe, _ := pke.Public().(*ecdsa.PublicKey)
 	addr, _ := addressFromPubKey(pb)
 	s.wallets = append(s.wallets, &wallet{
@@ -193,7 +189,7 @@ func (s *state) saveState() {
 			Name:       w.name,
 			Address:    w.address,
 			EthAddress: crypto.PubkeyToAddress(*w.pubKeyE).String(),
-			Pk:         base64.StdEncoding.EncodeToString(w.privKey[:]),
+			Pk:         base64.StdEncoding.EncodeToString(w.privKey.Key[:]),
 		})
 	}
 	stateFile, err := os.Create(stateFileName)
@@ -342,7 +338,7 @@ func updateW(wallets []*wallet, baseUrl string) {
 func (s *state) initInstances() {
 	s.instances = make([]*MiniStore.MiniStore, len(s.nodes))
 	for i, n := range s.nodes {
-		client, err := ethclient.Dial(n)
+		client, err := ethclient.Dial(n + ethPort)
 		if err != nil {
 			log.Fatalln("failed to create ethclient")
 		}
@@ -384,7 +380,7 @@ func (s *state) deploySC() {
 	if err != nil {
 		log.Printf("Smart-contract was not found on address: %s, err: %v\n", s.sc_address.String(), err)
 		// no SC at given newAddress, let deploy a new one, from first wallet
-		client, err := ethclient.Dial(s.nodes[0])
+		client, err := ethclient.Dial(s.nodes[0] + ethPort)
 		if err != nil {
 			log.Fatalln("failed to create ethclient")
 		}

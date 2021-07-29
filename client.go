@@ -12,8 +12,11 @@ import (
 )
 
 const (
-	restDefaultBaseUrl = `http://localhost:8545`
-	restGetAccount     = `/auth/accounts/`
+	restPort           = `:1317`
+	ethPort            = `:8545`
+	restDefaultBaseUrl = `http://localhost`
+	restGetAccount     = `/cosmos/auth/v1beta1/accounts/`
+	restGetBalance     = `/cosmos/bank/v1beta1/balances/`
 	restBroadcastTx    = `/txs`
 )
 
@@ -22,18 +25,21 @@ const (
 )
 
 type accountResponse struct {
-	Result struct {
-		Type  string `json:"type"`
-		Value struct {
-			Address string `json:"address"`
-			Coins   []struct {
-				Denom  string `json:"denom"`
-				Amount string `json:"amount"`
-			} `json:"coins"`
+	Account struct {
+		Type        string `json:"type"`
+		BaseAccount struct {
+			Address       string      `json:"address"`
 			AccountNumber interface{} `json:"account_number"`
 			Sequence      interface{} `json:"sequence"`
-		} `json:"value"`
-	} `json:"result"`
+		} `json:"base_account"`
+	} `json:"account"`
+}
+
+type balanceResponse struct {
+	Balances []struct {
+		Denom  string `json:"denom"`
+		Amount string `json:"amount"`
+	} `json:"balances"`
 }
 
 type broadcastResponse struct {
@@ -59,7 +65,7 @@ var (
 )
 
 func queryAccount(address, nodeUrl string) *account {
-	resp, err := http.Get(nodeUrl + restGetAccount + address)
+	resp, err := http.Get(nodeUrl + restPort + restGetAccount + address)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -71,27 +77,48 @@ func queryAccount(address, nodeUrl string) *account {
 	// parse response
 	var res accountResponse
 	if err = json.Unmarshal(respBody, &res); err != nil {
-		log.Println(err)
+		log.Println("failed to parse accountResponse:", err)
 		return &account{address: address}
 	}
-	if res.Result.Value.Address != address || len(res.Result.Value.Coins) == 0 {
-		return nil
+	if res.Account.BaseAccount.Address != address {
+		return &account{address: address}
 	}
 	var accountNumber uint64
-	if s, ok := res.Result.Value.AccountNumber.(string); ok {
+	if s, ok := res.Account.BaseAccount.AccountNumber.(string); ok {
 		v, _ := strconv.ParseInt(s, 10, 64)
 		accountNumber = uint64(v)
-	} else if v, ok := res.Result.Value.AccountNumber.(float64); ok {
+	} else if v, ok := res.Account.BaseAccount.AccountNumber.(float64); ok {
 		accountNumber = uint64(v)
 	}
 	var sequence uint64
-	if s, ok := res.Result.Value.Sequence.(string); ok {
+	if s, ok := res.Account.BaseAccount.Sequence.(string); ok {
 		v, _ := strconv.ParseInt(s, 10, 64)
 		sequence = uint64(v)
-	} else if v, ok := res.Result.Value.Sequence.(float64); ok {
+	} else if v, ok := res.Account.BaseAccount.Sequence.(float64); ok {
 		sequence = uint64(v)
 	}
-	bal, err := strconv.ParseInt(res.Result.Value.Coins[0].Amount, 10, 64)
+	// get balance
+	resp, err = http.Get(nodeUrl + restPort + restGetBalance + address)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer resp.Body.Close()
+	respBody, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Fatal(err)
+	}
+	// parse response
+	var res2 balanceResponse
+	if err = json.Unmarshal(respBody, &res2); err != nil {
+		log.Println("failed to parse balanceResponse:", err)
+		return &account{address: address}
+	}
+	var bal int64
+	for _, c := range res2.Balances {
+		if c.Denom == "aphoton" {
+			bal, _ = strconv.ParseInt(res2.Balances[0].Amount, 10, 64)
+		}
+	}
 	return &account{
 		address:       address,
 		balance:       uint64(bal),
@@ -103,7 +130,7 @@ func queryAccount(address, nodeUrl string) *account {
 func broadcastTx(tx string, nodeUrl, mode string) (string, error) {
 	btx := fmt.Sprintf(broadcastTxTpl, mode, tx)
 	rb := strings.NewReader(btx)
-	resp, err := http.Post(nodeUrl+restBroadcastTx, `application/json`, rb)
+	resp, err := http.Post(nodeUrl+restPort+restBroadcastTx, `application/json`, rb)
 	if err != nil {
 		return "", err
 	}
