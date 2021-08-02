@@ -65,6 +65,10 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 			log.Println(from.address[:8], "fix sequence:", from.sequence, " to ", seq)
 			from.sequence = seq
 			continue
+		} else if strings.Contains(err.Error(), "internal") {
+			log.Println("call InsertArray() FAIL, err:", err, ", retrying within 1s")
+			time.Sleep(time.Second)
+			continue
 		} else if err != nil {
 			log.Println("call InsertArray() FAIL, with sequence:", from.sequence, " err:", err)
 			return
