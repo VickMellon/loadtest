@@ -76,6 +76,7 @@ func main() {
 
 	// Go!
 	for i := 0; i < int(c); i++ {
+		time.Sleep(pr.delayUpTo / time.Duration(c)) // initial calls time shift
 		if m == 1 {
 			go sc_caller(wg, s.workset[i], s.instances[i%len(s.nodes)], pr, ic)
 		} else if m >= 2 {
