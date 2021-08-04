@@ -68,8 +68,8 @@ func sc_caller(wg *sync.WaitGroup, from *wallet, instance *MiniStore.MiniStore, 
 		} else if err != nil && strings.Contains(err.Error(), "internal") {
 			log.Println("call InsertArray() FAIL, err:", err, ", retrying within", retryInt)
 			time.Sleep(retryInt)
-			if retryInt < 30*time.Second {
-				retryInt *= 2 // progressive pause, but not longer 30s
+			if retryInt < 100*time.Millisecond {
+				retryInt *= 2 // progressive pause, but not longer 100ms
 			}
 			continue
 		} else if err != nil {
